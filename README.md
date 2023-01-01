@@ -14,7 +14,7 @@ $ python3 -m http.server --directory ./jumpover/ 8080
  
 ```
 
-and then open a web browser on ``http://localhost:8080``.
+and then open a web browser on http://localhost:8080.
 
 ## Development notes
 
