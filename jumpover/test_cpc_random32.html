@@ -1,0 +1,50 @@
+<!doctype html>
+
+<!-- 
+  To run the Brython successfully (locally), run from a (localhost) 
+  server, else the local imports do not work.
+  
+  Local server example:
+    $ php -S localhost:8080
+-->
+
+<html>
+
+<head>
+ <meta charset="utf-8">
+ <script type="text/javascript" src="brython.js"></script>
+ <script type="text/javascript" src="brython_stdlib.js"></script>
+
+ <script type="text/python3" src="test_cpc_random32.py"></script>
+
+ <style>
+  body {
+   color: yellow;
+   background-color: black;
+ }
+ </style>
+</head>
+
+<body onload="brython(1)">
+  <table>
+      <tr>
+          <td><input id="titletext" value="This is the title"><button id="btn-title">Change title</button></td>
+          <td><button id="btn-run">Run test program</button></td>
+      </tr>
+      <tr>
+          <td rowspan="3">
+           <canvas id="plotarea" width="480" height="480"></canvas>
+          </td>
+          <td><p>JUMP OVER</p></textarea></td>
+      </tr>
+      <tr>
+           <td><textarea id="console" cols=40 rows=18></textarea></td>
+      </tr>
+      <tr>
+           <td><p>SPIELSTAND</p>
+           <p id="score">waiting...</p></td>
+      </tr>
+  </table>
+</body>
+
+</html>

@@ -1,0 +1,16 @@
+Sound synthesizer:
+	https://tonejs.github.io/
+
+To use Javascript libraries in the Brython code, there are several ways.
+
+https://www.brython.info/static_doc/en/jsobjects.html
+
+The most canonical way is to pass via the 'window' object/module
+
+```
+from browser import window
+
+```
+
+Any loaded JavaScript functions (e.g. tone.js) are available from Brython via window.xxx namespace.
+

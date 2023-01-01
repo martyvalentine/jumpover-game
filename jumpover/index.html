@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+
+<head>
+<meta charset="utf-8">
+<script type="text/javascript" src="brython.js"></script>
+<script type="text/javascript" src="brython_stdlib.js"></script>
+
+<script type="text/python3" src="jumpover_html5_ui.py"></script>
+
+
+<style>
+ body {
+  font-family: sans-serif;
+  font-size: 13px;
+  color: #f3f30d;
+  background-color: #000201;
+ }
+
+ p.jumpover {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: #f30506;
+  text-align: center;
+  line-height: 1.0;
+ }
+ 
+ textarea {
+     resize: none;
+ }
+</style>
+</head>
+
+
+<body onload="brython(1)">
+  <table>
+      <tr>
+        <td rowspan = "3">
+         <div>
+          <input type="radio" id="oneplayerY" name="Nplayers" value="1"
+                 checked>
+          <label for="oneplayerY">Spieler (gelb) vs Computer</label>
+        </div>
+        <div>
+          <input type="radio" id="oneplayerB" name="Nplayers" value="1"
+                 checked>
+          <label for="oneplayerB">Spieler (blau) vs Computer</label>
+        </div>
+
+
+        <div>
+          <input type="radio" id="twoplayer" name="Nplayers" value="2">
+          <label for="twoplayer">Spieler vs Spieler</label>
+        </div>
+
+        <div>
+          <input type="radio" id="noplayer" name="Nplayers" value="-1">
+          <label for="noplayer">Computer vs Computer</label>
+        </div>
+        </td>
+        <td rowspan = 2 style="text-align:center">
+         <div id="viewstrength">
+           <label for="strength">Stärke:</label>
+           <input type="range" id="strength" name="strength" 
+                  min="1" max="4" value="1">
+         </div>
+        </td>
+        
+        <td><button id="btn-yellow-starts">Gelb fängt an</button></td>
+        
+      <tr>
+        <td><button id="btn-blue-starts">Blau fängt an</button></td>
+        
+      </tr>
+      <tr>
+        <td style="text-align:center">
+         <div id="viewSobanski">
+           <input type="checkbox" id="Sobanski" name="Sobanski"
+                  checked>
+           <label for="Sobanski">pure Sobanski CPC</label>
+         </div>
+        </td>
+        
+        <td><button id="btn-stop">Ende</button></td>
+        
+      </tr>
+      <tr>
+          <td rowspan="3" colspan="2">
+           <canvas id="plotarea" width="480" height="480"></canvas>
+          </td>
+          <td>
+           <p class="jumpover">JUMP OVER</p>
+           <p class="jumpover">---------</p>
+           </td>
+      </tr>
+      <tr>
+           <td><textarea id="console" 
+                  style="color: #f3f30d;
+                         background-color: #000201;
+                         border-color: #f30506"
+                  cols=32 rows=16 readonly>
+               </textarea></td>
+      </tr>
+      <tr>
+           <td>
+            <p class="jumpover">SPIELSTAND:</p>
+            <p class="jumpover" id="score">
+             <span style='color:#6e7bf6' id="score1">?</span> : <span style='color:#f3f30d' id="score2">?</span>
+            </p>
+           </td>
+      </tr>
+      <tr>
+        <td colspan = "2" style="text-align:center">
+        <button id="btn-skip">Zug abgeben</button>
+        </td>
+        <td style="text-align:center">
+        <p>other stuff</p>
+        </td>
+      </tr>
+  </table>
+</body>
+
+</html>
