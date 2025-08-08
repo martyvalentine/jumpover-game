@@ -1,6 +1,6 @@
 # HTML5 port of Sobanski's "Jump Over"
 
-This is a port (still under development) in HTML5/JavaScript/Brython of the wonderful "Jump Over" game that was programmed by Bodo Sobanski in Locomotive Basic for the Amstrad/Schneider CPC464 (and related computers). This port is an adaptation that aims mainly to preserve the computer's strategy and game play. The original code can be found in *CPC Magazin* **1986/02**, pp. 71-76 (see ``./documentation/``).
+This is an experimental port in HTML5/JavaScript/Brython of the wonderful "Jump Over" game that was programmed by Bodo Sobanski in Locomotive Basic for the Amstrad/Schneider CPC464 (and related computers). This port is an adaptation that aims mainly to preserve the computer's strategy and game play. The original code can be found in *CPC Magazin* **1986/02**, pp. 71-76 (see ``./documentation/``).
 
 
 ## Running the program
