@@ -1,0 +1,5 @@
+yellow		f3f30d
+blue		6e7bf6
+red		f30506
+black		000201
+
