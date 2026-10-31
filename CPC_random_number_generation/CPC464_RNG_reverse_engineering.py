@@ -4,9 +4,12 @@ floating point routines
 
 with claude.ai
 
-261031 First version, still in need of tweaks and verification. In 
-       particular, the random value returned by CPC BASIC is probably
-       the value prior to calculation of the next number.
+
+261031 Demonstration & test code adapted for comparison with cpc_random32.py
+       Both codes were demonstrated to give the identical sequence of random
+       numbers.
+       
+261031 First version, still in need of tweaks and verification.
 
 
 ## From ROM disassembly
@@ -101,11 +104,34 @@ def cpc_float_mantissa(x):
     if x < 0:
         mant |= 0x80000000
     return mant
+    
 
 
+# Demonstration & test, harmonized with cpc_random32.py
+# both implementation yield exactly the same sequence
+#
+# CPC464_RNG_reverse_engineering.py is much faster
+# 
 if __name__ == "__main__":
     r = CPCRnd()
-    for _ in range(5):
+    
+    for i in range(5):
         print(f"{r.rnd():.9f}")
         
-        
+    print()
+    
+    r.randomize(0)
+    n=0
+    print(n, r.rnd0())  ## ! RND(0)
+    n+=1
+    for i in range(10):
+        print(n, r.rnd()) # RND(1)
+        n+=1
+    print('(... 10000 iterations ...)')
+    for i in range(1,10001):
+        x = r.rnd() # RND(1)
+        n+=1
+    for i in range(1,11):
+        print(n, r.rnd()) # RND(1)
+        n+=1
+    
