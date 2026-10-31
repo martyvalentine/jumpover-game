@@ -1,7 +1,20 @@
-; z80dasm 1.1.6
-; command line: z80dasm -a -l -g 0xc000 -b blocks.blk -S syms2.txt -o final.asm basic.rom
-
-	org	0c000h
+; ============================================================================
+; Amstrad CPC464 - Locomotive BASIC 1.0 upper ROM (16 KB), loaded at &C000
+; Disassembled with z80dasm + custom code/data tracing; reassembles with pasmo
+; to a byte-identical copy of the source ROM.
+;
+; Notes
+;  - Entry point &C006. ROM header at &C000, name table at &C04C.
+;  - "call expect_char_inline" (&DD37) is followed by ONE inline byte: the
+;    character the BASIC text must contain next (e.g. '(' ')' ',').
+;  - raise_error (&CA94): error number in E; messages at err_msg_00..30.
+;  - stmt_dispatch_table: entry n handles token &80+n (verified vs keyword table).
+;  - Key tables (&CFF2, &EC2C, &F224) are searched by &FF93:
+;    count, then (handler addr, key byte) entries, then default addr.
+;  - fn_dispatch_table token mapping NOT verified.
+;  - Names raise_error / expect_char_inline are inferred from behaviour.
+;  - Code vs data in a few small areas was decided heuristically.
+; ============================================================================
 KM_WAIT_CHAR:	equ 0xbb06
 KM_READ_CHAR:	equ 0xbb09
 KM_CHAR_RETURN:	equ 0xbb0c
@@ -101,23 +114,16 @@ GRA_FILL:	equ 0xbd52
 SCR_SET_POSITION:	equ 0xbd55
 MC_PRINT_TRANSLATION:	equ 0xbd58
 
+	org 0c000h
 
-; BLOCK 'b0' (start 0xc000 end 0xc004)
-b0_start:
-	defb 080h		;c000
-	defb 001h		;c001
-	defb 000h		;c002
-	defb 000h		;c003
-b0_end:
 
-; BLOCK 'b1' (start 0xc004 end 0xc006)
-b1_start:
-	defw 0c04ch		;c004
-b1_end:
+; ---- ROM header ----
+rom_header:
+	defb 080h,001h,000h,000h		; c000  ROM type &80, mark 1, version 0.0
 
-; BLOCK 'b2' (start 0xc006 end 0xc03f)
-b2_start:
-	ld sp,b0_start		;c006
+rom_name_table_ptr:
+	defw 0c04ch		; c004
+	ld sp,0c000h		;c006
 	call KL_ROM_WALK		;c009
 	call sub_f4c4h		;c00c
 	jp c,00000h		;c00f
@@ -128,60 +134,36 @@ lc019h:
 	inc hl			;c019
 	ld (hl),0c9h		;c01a
 	djnz lc019h		;c01c
-	ld hl,b2_end		;c01e
+	ld hl,str_c03f		;c01e
 	call sub_c337h		;c021
 	xor a			;c024
 	ld (0ac00h),a		;c025
 	call sub_ddcbh		;c028
 	call sub_ca84h		;c02b
 	call 0bd97h		;c02e
-	call b6_end		;c031
+	call sub_c0d3h		;c031
 	call sub_c13eh		;c034
 	ld de,000f0h		;c037
 	call sub_f706h		;c03a
 	jr lc064h		;c03d
-b2_end:
 
-; BLOCK 'b3' (start 0xc03f end 0xc04c)
-b3_start:
-	defb 020h		;c03f
-	defb 042h		;c040
-	defb 041h		;c041
-	defb 053h		;c042
-	defb 049h		;c043
-	defb 043h		;c044
-	defb 020h		;c045
-	defb 031h		;c046
-	defb 02eh		;c047
-	defb 030h		;c048
-	defb 00ah		;c049
-	defb 00ah		;c04a
-	defb 000h		;c04b
-b3_end:
+str_c03f:
+	defb " BASIC 1.0",00ah,00ah,000h		; c03f
 
-; BLOCK 'b4' (start 0xc04c end 0xc052)
-b4_start:
-	defb 042h		;c04c
-	defb 041h		;c04d
-	defb 053h		;c04e
-	defb 049h		;c04f
-	defb 0c3h		;c050
-	defb 000h		;c051
-b4_end:
-
-; BLOCK 'b5' (start 0xc052 end 0xc0cc)
-b5_start:
+rom_name_table:
+	defb 042h,041h,053h,049h,0c3h,000h		; c04c  "BASIC"+bit7 terminator, 0
+lc052h:
 	call sub_cee1h		;c052
 	ret nz			;c055
 lc056h:
-	ld sp,b0_start		;c056
+	ld sp,0c000h		;c056
 	call sub_e79ah		;c059
 	call sub_e163h		;c05c
 	call sub_ca43h		;c05f
 	jr c,lc0b8h		;c062
 lc064h:
 	call 0ac01h		;c064
-	ld sp,b0_start		;c067
+	ld sp,0c000h		;c067
 	call sub_c162h		;c06a
 	call sub_ddd6h		;c06d
 	call c,SOUND_HOLD		;c070
@@ -198,7 +180,7 @@ lc064h:
 	ex de,hl			;c08d
 	jr c,lc056h		;c08e
 lc090h:
-	ld hl,b5_end		;c090
+	ld hl,str_c0cc		;c090
 	call sub_c341h		;c093
 lc096h:
 	call sub_ddcbh		;c096
@@ -224,25 +206,14 @@ lc0b8h:
 	call nz,sub_c17ah		;c0bd
 	jr lc096h		;c0c0
 lc0c2h:
-	call b150_end		;c0c2
+	call sub_debbh		;c0c2
 	call sub_c453h		;c0c5
 	dec hl			;c0c8
 	jp ldd74h		;c0c9
-b5_end:
 
-; BLOCK 'b6' (start 0xc0cc end 0xc0d3)
-b6_start:
-	defb 052h		;c0cc
-	defb 065h		;c0cd
-	defb 061h		;c0ce
-	defb 064h		;c0cf
-	defb 079h		;c0d0
-	defb 00ah		;c0d1
-	defb 000h		;c0d2
-b6_end:
-
-; BLOCK 'b7' (start 0xc0d3 end 0xc1f8)
-b7_start:
+str_c0cc:
+	defb "Ready",00ah,000h		; c0cc
+sub_c0d3h:
 	xor a			;c0d3
 	jr lc0dbh		;c0d4
 sub_c0d6h:
@@ -251,6 +222,7 @@ sub_c0d6h:
 lc0dbh:
 	ld (0ac1ch),a		;c0db
 	ret			;c0de
+lc0dfh:
 	ld de,0000ah		;c0df
 	jr z,lc0e6h		;c0e2
 	cp 02ch		;c0e4
@@ -278,7 +250,7 @@ sub_c102h:
 	ld a,020h		;c111
 lc113h:
 	call sub_c356h		;c113
-	call b6_end		;c116
+	call sub_c0d3h		;c116
 	call sub_ca3bh		;c119
 	ret nc			;c11c
 	call sub_c34eh		;c11d
@@ -289,9 +261,11 @@ lc113h:
 	pop hl			;c128
 	scf			;c129
 	ret			;c12a
+lc12bh:
 	ret nz			;c12b
 	call sub_c13eh		;c12c
 	jp lc064h		;c12f
+lc132h:
 	push hl			;c132
 	call sub_c18ch		;c133
 	call sub_c15bh		;c136
@@ -310,7 +284,7 @@ sub_c13eh:
 	ld (hl),a			;c14c
 	ldir		;c14d
 	ld (0ae45h),a		;c14f
-	call b157_end		;c152
+	call sub_e676h		;c152
 	call sub_c18ch		;c155
 	call sub_c16bh		;c158
 sub_c15bh:
@@ -324,9 +298,9 @@ sub_c162h:
 	jp lc19dh		;c168
 sub_c16bh:
 	call sub_dde6h		;c16b
-	call b6_end		;c16e
+	call sub_c0d3h		;c16e
 	call sub_f1f2h		;c171
-	call b157_end		;c174
+	call sub_e676h		;c174
 	call sub_d5b1h		;c177
 sub_c17ah:
 	call sub_cbd9h		;c17a
@@ -405,21 +379,14 @@ sub_c1e3h:
 	ret			;c1f4
 sub_c1f5h:
 	call expect_char_inline		;c1f5
-b7_end:
 
-; BLOCK 'b8' (start 0xc1f8 end 0xc1f9)
-b8_start:
-	defb 023h		;c1f8
-b8_end:
-
-; BLOCK 'b9' (start 0xc1f9 end 0xc231)
-b9_start:
+	defb 023h		; c1f8  ; inline char '#'
 	ld a,00ah		;c1f9
 sub_c1fbh:
 	push bc			;c1fb
 	push de			;c1fc
 	ld b,a			;c1fd
-	call b76_end		;c1fe
+	call sub_ce67h		;c1fe
 	cp b			;c201
 	pop de			;c202
 	pop bc			;c203
@@ -427,9 +394,11 @@ sub_c1fbh:
 lc205h:
 	ld e,005h		;c205
 	jp raise_error		;c207
+lc20ah:
 	call sub_c1d0h		;c20a
 	ld bc,TXT_SET_PAPER		;c20d
 	jr lc218h		;c210
+lc212h:
 	call sub_c1d0h		;c212
 	ld bc,TXT_SET_PEN		;c215
 lc218h:
@@ -438,23 +407,18 @@ lc218h:
 	call sub_fff9h		;c21c
 	pop hl			;c21f
 	ret			;c220
+lc221h:
 	call sub_c23ch		;c221
 	push hl			;c224
 	call SCR_SET_BORDER		;c225
 	pop hl			;c228
 	ret			;c229
+lc22ah:
 	call sub_c24bh		;c22a
 	push af			;c22d
 	call expect_char_inline		;c22e
-b9_end:
 
-; BLOCK 'b10' (start 0xc231 end 0xc232)
-b10_start:
-	defb 02ch		;c231
-b10_end:
-
-; BLOCK 'b11' (start 0xc232 end 0xc283)
-b11_start:
+	defb 02ch		; c231  ; inline char ','
 	call sub_c23ch		;c232
 	pop af			;c235
 	push hl			;c236
@@ -474,15 +438,18 @@ sub_c244h:
 sub_c24bh:
 	ld a,010h		;c24b
 	jr sub_c1fbh		;c24d
+lc24fh:
 	ld a,003h		;c24f
 	call sub_c1fbh		;c251
 	push hl			;c254
 	call SCR_SET_MODE		;c255
 	pop hl			;c258
 	ret			;c259
+lc25ah:
 	call sub_c1d0h		;c25a
 	ld a,00ch		;c25d
 	jp lc36eh		;c25f
+lc262h:
 	ld bc,lc267h		;c262
 	jr lc279h		;c265
 lc267h:
@@ -493,21 +460,15 @@ lc267h:
 	call TXT_VALIDATE		;c271
 	ld a,l			;c274
 	ret			;c275
+lc276h:
 	ld bc,lc290h		;c276
 lc279h:
 	call sub_c1f5h		;c279
 	call lc1a2h		;c27c
 	push af			;c27f
 	call expect_char_inline		;c280
-b11_end:
 
-; BLOCK 'b12' (start 0xc283 end 0xc284)
-b12_start:
-	defb 029h		;c283
-b12_end:
-
-; BLOCK 'b13' (start 0xc284 end 0xc2f0)
-b13_start:
+	defb 029h		; c283  ; inline char ')'
 	push hl			;c284
 	call sub_fff9h		;c285
 	call sub_ff0ah		;c288
@@ -561,6 +522,7 @@ sub_c2bfh:
 	dec a			;c2cf
 	cp l			;c2d0
 	ret			;c2d1
+lc2d2h:
 	call sub_c1d0h		;c2d2
 	call sub_c327h		;c2d5
 	push hl			;c2d8
@@ -570,6 +532,7 @@ sub_c2bfh:
 	call TXT_SET_CURSOR		;c2dc
 	pop hl			;c2df
 	ret			;c2e0
+lc2e1h:
 	ld a,(hl)			;c2e1
 	cp 0e7h		;c2e2
 	jr z,lc2fdh		;c2e4
@@ -577,15 +540,8 @@ sub_c2bfh:
 	call sub_c327h		;c2e9
 	push de			;c2ec
 	call expect_char_inline		;c2ed
-b13_end:
 
-; BLOCK 'b14' (start 0xc2f0 end 0xc2f1)
-b14_start:
-	defb 02ch		;c2f0
-b14_end:
-
-; BLOCK 'b15' (start 0xc2f1 end 0xc32e)
-b15_start:
+	defb 02ch		; c2f0  ; inline char ','
 	call sub_c327h		;c2f1
 	ex (sp),hl			;c2f4
 	ld a,d			;c2f5
@@ -610,26 +566,22 @@ sub_c312h:
 	call sub_c1fbh		;c314
 	ld b,a			;c317
 	ret			;c318
+lc319h:
 	call sub_c1d0h		;c319
 	ld a,0ffh		;c31c
 	jr lc324h		;c31e
+lc320h:
 	call sub_c1d0h		;c320
 	xor a			;c323
 lc324h:
 	jp TXT_SET_GRAPHIC		;c324
 sub_c327h:
-	call b16_end		;c327
+	call sub_c32fh		;c327
 	ld d,e			;c32a
 	call expect_char_inline		;c32b
-b15_end:
 
-; BLOCK 'b16' (start 0xc32e end 0xc32f)
-b16_start:
-	defb 02ch		;c32e
-b16_end:
-
-; BLOCK 'b17' (start 0xc32f end 0xc49e)
-b17_start:
+	defb 02ch		; c32e  ; inline char ','
+sub_c32fh:
 	push de			;c32f
 	call sub_ce6dh		;c330
 	pop de			;c333
@@ -748,6 +700,7 @@ lc3d5h:
 lc3dfh:
 	ld a,(0ac23h)		;c3df
 	ret			;c3e2
+lc3e3h:
 	call sub_ce6dh		;c3e3
 	ld (0ac24h),a		;c3e6
 	ret			;c3e9
@@ -853,6 +806,7 @@ lc489h:
 	pop af			;c489
 	scf			;c48a
 	ret			;c48b
+lc48ch:
 	call sub_c51ah		;c48c
 	push bc			;c48f
 	push de			;c490
@@ -862,15 +816,8 @@ lc489h:
 	push bc			;c499
 	push de			;c49a
 	call expect_char_inline		;c49b
-b17_end:
 
-; BLOCK 'b18' (start 0xc49e end 0xc49f)
-b18_start:
-	defb 02ch		;c49e
-b18_end:
-
-; BLOCK 'b19' (start 0xc49f end 0xc4f8)
-b19_start:
+	defb 02ch		; c49e  ; inline char ','
 	call sub_c51ah		;c49f
 	push bc			;c4a2
 	ex (sp),hl			;c4a3
@@ -886,6 +833,7 @@ lc4aeh:
 	call GRA_SET_ORIGIN		;c4b0
 	pop hl			;c4b3
 	ret			;c4b4
+lc4b5h:
 	call sub_dd51h		;c4b5
 	jr c,lc4c0h		;c4b8
 	call sub_c24bh		;c4ba
@@ -895,12 +843,16 @@ lc4c0h:
 	call GRA_CLEAR_WINDOW		;c4c1
 	pop hl			;c4c4
 	ret			;c4c5
+lc4c6h:
 	ld bc,GRA_LINE_ABSOLUTE		;c4c6
 	jr lc4d8h		;c4c9
+lc4cbh:
 	ld bc,GRA_LINE_RELATIVE		;c4cb
 	jr lc4d8h		;c4ce
+lc4d0h:
 	ld bc,GRA_PLOT_ABSOLUTE		;c4d0
 	jr lc4d8h		;c4d3
+lc4d5h:
 	ld bc,GRA_PLOT_RELATIVE		;c4d5
 lc4d8h:
 	push bc			;c4d8
@@ -911,22 +863,17 @@ lc4d8h:
 	call GRA_SET_PEN		;c4e4
 lc4e7h:
 	jr lc511h		;c4e7
+lc4e9h:
 	ld bc,GRA_TEST_ABSOLUTE		;c4e9
 	jr lc4f1h		;c4ec
+lc4eeh:
 	ld bc,GRA_TEST_RELATIVE		;c4ee
 lc4f1h:
 	push bc			;c4f1
 	call sub_c51ah		;c4f2
 	call expect_char_inline		;c4f5
-b19_end:
 
-; BLOCK 'b20' (start 0xc4f8 end 0xc4f9)
-b20_start:
-	defb 029h		;c4f8
-b20_end:
-
-; BLOCK 'b21' (start 0xc4f9 end 0xc521)
-b21_start:
+	defb 029h		; c4f8  ; inline char ')'
 	ex (sp),hl			;c4f9
 	push bc			;c4fa
 	ex (sp),hl			;c4fb
@@ -935,8 +882,10 @@ b21_start:
 	call sub_ff0ah		;c500
 	pop hl			;c503
 	ret			;c504
+lc505h:
 	ld bc,GRA_MOVE_ABSOLUTE		;c505
 	jr lc50dh		;c508
+lc50ah:
 	ld bc,GRA_MOVE_RELATIVE		;c50a
 lc50dh:
 	push bc			;c50d
@@ -953,20 +902,14 @@ sub_c51ah:
 	call sub_ce86h		;c51a
 	push de			;c51d
 	call expect_char_inline		;c51e
-b21_end:
 
-; BLOCK 'b22' (start 0xc521 end 0xc522)
-b22_start:
-	defb 02ch		;c521
-b22_end:
-
-; BLOCK 'b23' (start 0xc522 end 0xc57f)
-b23_start:
+	defb 02ch		; c521  ; inline char ','
 	call sub_ce86h		;c522
 	ld b,d			;c525
 	ld c,e			;c526
 	pop de			;c527
 	ret			;c528
+lc529h:
 	call sub_d6b3h		;c529
 	push hl			;c52c
 	push bc			;c52d
@@ -1017,15 +960,8 @@ lc573h:
 	inc hl			;c57a
 	ex (sp),hl			;c57b
 	call expect_char_inline		;c57c
-b23_end:
 
-; BLOCK 'b24' (start 0xc57f end 0xc580)
-b24_start:
-	defb 0efh		;c57f
-b24_end:
-
-; BLOCK 'b25' (start 0xc580 end 0xc592)
-b25_start:
+	defb 0efh		; c57f
 	call sub_cefbh		;c580
 	ld a,c			;c583
 	call sub_fed7h		;c584
@@ -1034,15 +970,8 @@ b25_start:
 	call sub_ff62h		;c58b
 	pop hl			;c58e
 	call expect_char_inline		;c58f
-b25_end:
 
-; BLOCK 'b26' (start 0xc592 end 0xc593)
-b26_start:
-	defb 0ech		;c592
-b26_end:
-
-; BLOCK 'b27' (start 0xc593 end 0xc6d1)
-b27_start:
+	defb 0ech		; c592
 	call sub_cefbh		;c593
 	ex (sp),hl			;c596
 	ld a,c			;c597
@@ -1106,6 +1035,7 @@ lc5b3h:
 lc5f6h:
 	ld e,001h		;c5f6
 	jp raise_error		;c5f8
+lc5fbh:
 	ld a,0ffh		;c5fb
 	ld (0ac26h),a		;c5fd
 lc600h:
@@ -1261,19 +1191,14 @@ lc6b7h:
 	inc hl			;c6c4
 	sub (hl)			;c6c5
 	ret			;c6c6
+lc6c7h:
 	call sub_cefbh		;c6c7
 	cp 0a0h		;c6ca
-	jr z,b28_end		;c6cc
+	jr z,lc6d2h		;c6cc
 	call expect_char_inline		;c6ce
-b27_end:
 
-; BLOCK 'b28' (start 0xc6d1 end 0xc6d2)
-b28_start:
-	defb 0ebh		;c6d1
-b28_end:
-
-; BLOCK 'b29' (start 0xc6d2 end 0xc7f5)
-b29_start:
+	defb 0ebh		; c6d1
+lc6d2h:
 	push hl			;c6d2
 	call sub_fda3h		;c6d3
 	pop hl			;c6d6
@@ -1289,6 +1214,7 @@ lc6e8h:
 	call sub_e767h		;c6e8
 	ex de,hl			;c6eb
 	ret			;c6ec
+lc6edh:
 	call sub_e767h		;c6ed
 	call sub_e8efh		;c6f0
 	ex de,hl			;c6f3
@@ -1313,6 +1239,7 @@ sub_c6f6h:
 	ld (hl),006h		;c70b
 	pop hl			;c70d
 	ret			;c70e
+lc70fh:
 	ret nz			;c70f
 	call sub_c72eh		;c710
 	call sub_f5ach		;c713
@@ -1353,6 +1280,7 @@ lc731h:
 	jr nz,lc731h		;c740
 	ld e,003h		;c742
 	jp raise_error		;c744
+lc747h:
 	push hl			;c747
 	call sub_ca18h		;c748
 	push hl			;c74b
@@ -1385,6 +1313,7 @@ lc731h:
 	ex de,hl			;c772
 	pop de			;c773
 	jr lc7a0h		;c774
+lc776h:
 	ret nz			;c776
 	ex de,hl			;c777
 	call sub_c7b8h		;c778
@@ -1461,24 +1390,18 @@ lc7deh:
 lc7e0h:
 	pop hl			;c7e0
 	jr lc7bbh		;c7e1
+lc7e3h:
 	cp 09ch		;c7e3
 	jp z,lcbe5h		;c7e5
-	call b76_end		;c7e8
+	call sub_ce67h		;c7e8
 	ld c,a			;c7eb
 	ld b,(hl)			;c7ec
 	ld a,b			;c7ed
 	cp 0a0h		;c7ee
 	jr z,lc7f7h		;c7f0
 	call expect_char_inline		;c7f2
-b29_end:
 
-; BLOCK 'b30' (start 0xc7f5 end 0xc7f6)
-b30_start:
-	defb 09fh		;c7f5
-b30_end:
-
-; BLOCK 'b31' (start 0xc7f6 end 0xc865)
-b31_start:
+	defb 09fh		; c7f5
 	dec hl			;c7f6
 lc7f7h:
 	dec c			;c7f7
@@ -1541,15 +1464,8 @@ lc847h:
 sub_c861h:
 	push de			;c861
 	call expect_char_inline		;c862
-b31_end:
 
-; BLOCK 'b32' (start 0xc865 end 0xc866)
-b32_start:
-	defb 09fh		;c865
-b32_end:
-
-; BLOCK 'b33' (start 0xc866 end 0xc8d5)
-b33_start:
+	defb 09fh		; c865
 	call sub_e767h		;c866
 	ld b,d			;c869
 	ld c,e			;c86a
@@ -1618,28 +1534,24 @@ lc8b6h:
 	ld hl,(0ac32h)		;c8c4
 	pop af			;c8c7
 	jp ldd74h		;c8c8
+lc8cbh:
 	cp 0ceh		;c8cb
 	ld de,00000h		;c8cd
 	jr z,lc8dah		;c8d0
 	call expect_char_inline		;c8d2
-b33_end:
 
-; BLOCK 'b34' (start 0xc8d5 end 0xc8d6)
-b34_start:
-	defb 09fh		;c8d5
-b34_end:
-
-; BLOCK 'b35' (start 0xc8d6 end 0xc943)
-b35_start:
+	defb 09fh		; c8d5
 	call sub_e767h		;c8d6
 	dec hl			;c8d9
 lc8dah:
 	ld (0ac34h),de		;c8da
 	jp sub_dd3fh		;c8de
+lc8e1h:
 	push hl			;c8e1
 	call KL_EVENT_DISABLE		;c8e2
 	pop hl			;c8e5
 	ret			;c8e6
+lc8e7h:
 	push hl			;c8e7
 	call KL_EVENT_ENABLE		;c8e8
 	pop hl			;c8eb
@@ -1689,31 +1601,18 @@ lc93ch:
 	dec d			;c93c
 	jr nz,sub_c924h		;c93d
 	ret			;c93f
+lc940h:
 	call expect_char_inline		;c940
-b35_end:
 
-; BLOCK 'b36' (start 0xc943 end 0xc944)
-b36_start:
-	defb 028h		;c943
-b36_end:
-
-; BLOCK 'b37' (start 0xc944 end 0xc951)
-b37_start:
-	call b76_end		;c944
+	defb 028h		; c943  ; inline char '('
+	call sub_ce67h		;c944
 	push af			;c947
 	call sub_c95dh		;c948
 	or a			;c94b
 	jr nz,lc96ch		;c94c
 	call expect_char_inline		;c94e
-b37_end:
 
-; BLOCK 'b38' (start 0xc951 end 0xc952)
-b38_start:
-	defb 029h		;c951
-b38_end:
-
-; BLOCK 'b39' (start 0xc952 end 0xcb23)
-b39_start:
+	defb 029h		; c951  ; inline char ')'
 	call sub_c861h		;c952
 	pop af			;c955
 	push hl			;c956
@@ -1734,9 +1633,11 @@ sub_c95dh:
 lc96ch:
 	ld e,005h		;c96c
 	jp raise_error		;c96e
+lc971h:
 	call sub_ce7ch		;c971
 	ld bc,00000h		;c974
 	jr lc97eh		;c977
+lc979h:
 	call sub_ce7ch		;c979
 	ld b,d			;c97c
 	ld c,e			;c97d
@@ -1760,6 +1661,7 @@ lc97eh:
 	call KL_ADD_TICKER		;c99a
 	pop hl			;c99d
 	ret			;c99e
+lc99fh:
 	call sub_fe8dh		;c99f
 	call sub_c9b1h		;c9a2
 	call KL_DEL_TICKER		;c9a5
@@ -1915,6 +1817,7 @@ sub_ca85h:
 	call sub_ddd2h		;ca88
 	ld (0ada6h),hl		;ca8b
 	ret			;ca8e
+lca8fh:
 	call sub_ce6dh		;ca8f
 	ret nz			;ca92
 	ld e,a			;ca93
@@ -1926,7 +1829,7 @@ raise_error:
 	ld (0ada8h),hl		;ca9e
 	call sub_cbb0h		;caa1
 lcaa4h:
-	ld sp,b0_start		;caa4
+	ld sp,0c000h		;caa4
 	ld hl,(0ae32h)		;caa7
 	call sub_f5ach		;caaa
 	call sub_fbb3h		;caad
@@ -1961,13 +1864,13 @@ sub_cadfh:
 lcaeah:
 	push de			;caea
 	push hl			;caeb
-	ld hl,b56_end		;caec
+	ld hl,err_msg_11		;caec
 	ld e,00bh		;caef
 	jr lcafah		;caf1
 lcaf3h:
 	push de			;caf3
 	push hl			;caf4
-	ld hl,b51_end		;caf5
+	ld hl,err_msg_06		;caf5
 	ld e,006h		;caf8
 lcafah:
 	push af			;cafa
@@ -1990,34 +1893,14 @@ lcafah:
 	ret			;cb17
 sub_cb18h:
 	call sub_c386h		;cb18
-	ld hl,b39_end		;cb1b
+	ld hl,str_cb23		;cb1b
 	call sub_cb48h		;cb1e
 	jr lcb40h		;cb21
-b39_end:
 
-; BLOCK 'b40' (start 0xcb23 end 0xcb33)
-b40_start:
-	defb 055h		;cb23
-	defb 06eh		;cb24
-	defb 064h		;cb25
-	defb 065h		;cb26
-	defb 066h		;cb27
-	defb 069h		;cb28
-	defb 06eh		;cb29
-	defb 065h		;cb2a
-	defb 064h		;cb2b
-	defb 020h		;cb2c
-	defb 06ch		;cb2d
-	defb 069h		;cb2e
-	defb 06eh		;cb2f
-	defb 065h		;cb30
-	defb 020h		;cb31
-	defb 000h		;cb32
-b40_end:
-
-; BLOCK 'b41' (start 0xcb33 end 0xcb4f)
-b41_start:
-	ld de,b41_end		;cb33
+str_cb23:
+	defb "Undefined line ",000h		; cb23
+sub_cb33h:
+	ld de,str_cb4f		;cb33
 sub_cb36h:
 	call lc19dh		;cb36
 	call sub_c386h		;cb39
@@ -2027,40 +1910,31 @@ lcb40h:
 	call sub_ddd6h		;cb40
 	ret nc			;cb43
 	ex de,hl			;cb44
-	ld hl,b42_end		;cb45
+	ld hl,lcb55h		;cb45
 sub_cb48h:
 	call sub_c341h		;cb48
 	ex de,hl			;cb4b
 	jp sub_ee79h		;cb4c
-b41_end:
 
-; BLOCK 'b42' (start 0xcb4f end 0xcb55)
-b42_start:
-	defb 042h		;cb4f
-	defb 072h		;cb50
-	defb 065h		;cb51
-	defb 061h		;cb52
-	defb 06bh		;cb53
-	defb 000h		;cb54
-b42_end:
-
-; BLOCK 'b43' (start 0xcb55 end 0xcbeb)
-b43_start:
+str_cb4f:
+	defb "Break",000h		; cb4f
+lcb55h:
 	jr nz,lcbc0h		;cb55
 	ld l,(hl)			;cb57
 	jr nz,lcb5ah		;cb58
 lcb5ah:
 	ret nz			;cb5a
 	push hl			;cb5b
-	call b40_end		;cb5c
+	call sub_cb33h		;cb5c
 	pop hl			;cb5f
 	call sub_cb93h		;cb60
 	jr lcb90h		;cb63
+lcb65h:
 	ret nz			;cb65
 	call sub_cb93h		;cb66
 	jr lcb87h		;cb69
 lcb6bh:
-	call b40_end		;cb6b
+	call sub_cb33h		;cb6b
 	ld hl,(0ae34h)		;cb6e
 	call sub_cbb0h		;cb71
 	jr lcb90h		;cb74
@@ -2133,26 +2007,21 @@ sub_cbddh:
 lcbe5h:
 	call sub_dd3fh		;cbe5
 	call expect_char_inline		;cbe8
-b43_end:
 
-; BLOCK 'b44' (start 0xcbeb end 0xcbec)
-b44_start:
-	defb 0a0h		;cbeb
-b44_end:
-
-; BLOCK 'b45' (start 0xcbec end 0xcc5b)
-b45_start:
+	defb 0a0h		; cbeb
 	call sub_cee1h		;cbec
 	push hl			;cbef
 	call sub_e79ah		;cbf0
 	ld (0adafh),hl		;cbf3
 	pop hl			;cbf6
 	ret			;cbf7
+lcbf8h:
 	call sub_cbddh		;cbf8
 	ld a,(0adb1h)		;cbfb
 	or a			;cbfe
 	ret z			;cbff
 	jp lcaa4h		;cc00
+lcc03h:
 	jr z,lcc19h		;cc03
 	cp 0b0h		;cc05
 	jr z,lcc20h		;cc07
@@ -2187,7 +2056,7 @@ sub_cc2bh:
 	ld hl,(0ada8h)		;cc41
 	ret			;cc44
 sub_cc45h:
-	ld de,b45_end		;cc45
+	ld de,err_msg_00		;cc45
 	cp 01fh		;cc48
 	ret nc			;cc4a
 	or a			;cc4b
@@ -2204,658 +2073,162 @@ lcc4eh:
 	or a			;cc57
 	jr z,sub_cc45h		;cc58
 	ret			;cc5a
-b45_end:
 
-; BLOCK 'b46' (start 0xcc5b end 0xcc69)
-b46_start:
-	defb 055h		;cc5b
-	defb 06eh		;cc5c
-	defb 06bh		;cc5d
-	defb 06eh		;cc5e
-	defb 06fh		;cc5f
-	defb 077h		;cc60
-	defb 06eh		;cc61
-	defb 020h		;cc62
-	defb 065h		;cc63
-	defb 072h		;cc64
-	defb 072h		;cc65
-	defb 06fh		;cc66
-	defb 072h		;cc67
-	defb 000h		;cc68
-b46_end:
+; error 0
+err_msg_00:
 
-; BLOCK 'b47' (start 0xcc69 end 0xcc79)
-b47_start:
-	defb 055h		;cc69
-	defb 06eh		;cc6a
-	defb 065h		;cc6b
-	defb 078h		;cc6c
-	defb 070h		;cc6d
-	defb 065h		;cc6e
-	defb 063h		;cc6f
-	defb 074h		;cc70
-	defb 065h		;cc71
-	defb 064h		;cc72
-	defb 020h		;cc73
-	defb 04eh		;cc74
-	defb 045h		;cc75
-	defb 058h		;cc76
-	defb 054h		;cc77
-	defb 000h		;cc78
-b47_end:
+	defb "Unknown error",000h		; cc5b
 
-; BLOCK 'b48' (start 0xcc79 end 0xcc86)
-b48_start:
-	defb 053h		;cc79
-	defb 079h		;cc7a
-	defb 06eh		;cc7b
-	defb 074h		;cc7c
-	defb 061h		;cc7d
-	defb 078h		;cc7e
-	defb 020h		;cc7f
-	defb 065h		;cc80
-	defb 072h		;cc81
-	defb 072h		;cc82
-	defb 06fh		;cc83
-	defb 072h		;cc84
-	defb 000h		;cc85
-b48_end:
+; error 1
+err_msg_01:
 
-; BLOCK 'b49' (start 0xcc86 end 0xcc98)
-b49_start:
-	defb 055h		;cc86
-	defb 06eh		;cc87
-	defb 065h		;cc88
-	defb 078h		;cc89
-	defb 070h		;cc8a
-	defb 065h		;cc8b
-	defb 063h		;cc8c
-	defb 074h		;cc8d
-	defb 065h		;cc8e
-	defb 064h		;cc8f
-	defb 020h		;cc90
-	defb 052h		;cc91
-	defb 045h		;cc92
-	defb 054h		;cc93
-	defb 055h		;cc94
-	defb 052h		;cc95
-	defb 04eh		;cc96
-	defb 000h		;cc97
-b49_end:
+	defb "Unexpected NEXT",000h		; cc69
 
-; BLOCK 'b50' (start 0xcc98 end 0xcca7)
-b50_start:
-	defb 044h		;cc98
-	defb 041h		;cc99
-	defb 054h		;cc9a
-	defb 041h		;cc9b
-	defb 020h		;cc9c
-	defb 065h		;cc9d
-	defb 078h		;cc9e
-	defb 068h		;cc9f
-	defb 061h		;cca0
-	defb 075h		;cca1
-	defb 073h		;cca2
-	defb 074h		;cca3
-	defb 065h		;cca4
-	defb 064h		;cca5
-	defb 000h		;cca6
-b50_end:
+; error 2
+err_msg_02:
 
-; BLOCK 'b51' (start 0xcca7 end 0xccb9)
-b51_start:
-	defb 049h		;cca7
-	defb 06dh		;cca8
-	defb 070h		;cca9
-	defb 072h		;ccaa
-	defb 06fh		;ccab
-	defb 070h		;ccac
-	defb 065h		;ccad
-	defb 072h		;ccae
-	defb 020h		;ccaf
-	defb 061h		;ccb0
-	defb 072h		;ccb1
-	defb 067h		;ccb2
-	defb 075h		;ccb3
-	defb 06dh		;ccb4
-	defb 065h		;ccb5
-	defb 06eh		;ccb6
-	defb 074h		;ccb7
-	defb 000h		;ccb8
-b51_end:
+	defb "Syntax error",000h		; cc79
 
-; BLOCK 'b52' (start 0xccb9 end 0xccc2)
-b52_start:
-	defb 04fh		;ccb9
-	defb 076h		;ccba
-	defb 065h		;ccbb
-	defb 072h		;ccbc
-	defb 066h		;ccbd
-	defb 06ch		;ccbe
-	defb 06fh		;ccbf
-	defb 077h		;ccc0
-	defb 000h		;ccc1
-b52_end:
+; error 3
+err_msg_03:
 
-; BLOCK 'b53' (start 0xccc2 end 0xccce)
-b53_start:
-	defb 04dh		;ccc2
-	defb 065h		;ccc3
-	defb 06dh		;ccc4
-	defb 06fh		;ccc5
-	defb 072h		;ccc6
-	defb 079h		;ccc7
-	defb 020h		;ccc8
-	defb 066h		;ccc9
-	defb 075h		;ccca
-	defb 06ch		;cccb
-	defb 06ch		;cccc
-	defb 000h		;cccd
-b53_end:
+	defb "Unexpected RETURN",000h		; cc86
 
-; BLOCK 'b54' (start 0xccce end 0xcce2)
-b54_start:
-	defb 04ch		;ccce
-	defb 069h		;cccf
-	defb 06eh		;ccd0
-	defb 065h		;ccd1
-	defb 020h		;ccd2
-	defb 064h		;ccd3
-	defb 06fh		;ccd4
-	defb 065h		;ccd5
-	defb 073h		;ccd6
-	defb 020h		;ccd7
-	defb 06eh		;ccd8
-	defb 06fh		;ccd9
-	defb 074h		;ccda
-	defb 020h		;ccdb
-	defb 065h		;ccdc
-	defb 078h		;ccdd
-	defb 069h		;ccde
-	defb 073h		;ccdf
-	defb 074h		;cce0
-	defb 000h		;cce1
-b54_end:
+; error 4
+err_msg_04:
 
-; BLOCK 'b55' (start 0xcce2 end 0xccf9)
-b55_start:
-	defb 053h		;cce2
-	defb 075h		;cce3
-	defb 062h		;cce4
-	defb 073h		;cce5
-	defb 063h		;cce6
-	defb 072h		;cce7
-	defb 069h		;cce8
-	defb 070h		;cce9
-	defb 074h		;ccea
-	defb 020h		;cceb
-	defb 06fh		;ccec
-	defb 075h		;cced
-	defb 074h		;ccee
-	defb 020h		;ccef
-	defb 06fh		;ccf0
-	defb 066h		;ccf1
-	defb 020h		;ccf2
-	defb 072h		;ccf3
-	defb 061h		;ccf4
-	defb 06eh		;ccf5
-	defb 067h		;ccf6
-	defb 065h		;ccf7
-	defb 000h		;ccf8
-b55_end:
+	defb "DATA exhausted",000h		; cc98
 
-; BLOCK 'b56' (start 0xccf9 end 0xcd13)
-b56_start:
-	defb 041h		;ccf9
-	defb 072h		;ccfa
-	defb 072h		;ccfb
-	defb 061h		;ccfc
-	defb 079h		;ccfd
-	defb 020h		;ccfe
-	defb 061h		;ccff
-	defb 06ch		;cd00
-	defb 072h		;cd01
-	defb 065h		;cd02
-	defb 061h		;cd03
-	defb 064h		;cd04
-	defb 079h		;cd05
-	defb 020h		;cd06
-	defb 064h		;cd07
-	defb 069h		;cd08
-	defb 06dh		;cd09
-	defb 065h		;cd0a
-	defb 06eh		;cd0b
-	defb 073h		;cd0c
-	defb 069h		;cd0d
-	defb 06fh		;cd0e
-	defb 06eh		;cd0f
-	defb 065h		;cd10
-	defb 064h		;cd11
-	defb 000h		;cd12
-b56_end:
+; error 5
+err_msg_05:
 
-; BLOCK 'b57' (start 0xcd13 end 0xcd24)
-b57_start:
-	defb 044h		;cd13
-	defb 069h		;cd14
-	defb 076h		;cd15
-	defb 069h		;cd16
-	defb 073h		;cd17
-	defb 069h		;cd18
-	defb 06fh		;cd19
-	defb 06eh		;cd1a
-	defb 020h		;cd1b
-	defb 062h		;cd1c
-	defb 079h		;cd1d
-	defb 020h		;cd1e
-	defb 07ah		;cd1f
-	defb 065h		;cd20
-	defb 072h		;cd21
-	defb 06fh		;cd22
-	defb 000h		;cd23
-b57_end:
+	defb "Improper argument",000h		; cca7
 
-; BLOCK 'b58' (start 0xcd24 end 0xcd3b)
-b58_start:
-	defb 049h		;cd24
-	defb 06eh		;cd25
-	defb 076h		;cd26
-	defb 061h		;cd27
-	defb 06ch		;cd28
-	defb 069h		;cd29
-	defb 064h		;cd2a
-	defb 020h		;cd2b
-	defb 064h		;cd2c
-	defb 069h		;cd2d
-	defb 072h		;cd2e
-	defb 065h		;cd2f
-	defb 063h		;cd30
-	defb 074h		;cd31
-	defb 020h		;cd32
-	defb 063h		;cd33
-	defb 06fh		;cd34
-	defb 06dh		;cd35
-	defb 06dh		;cd36
-	defb 061h		;cd37
-	defb 06eh		;cd38
-	defb 064h		;cd39
-	defb 000h		;cd3a
-b58_end:
+; error 6
+err_msg_06:
 
-; BLOCK 'b59' (start 0xcd3b end 0xcd49)
-b59_start:
-	defb 054h		;cd3b
-	defb 079h		;cd3c
-	defb 070h		;cd3d
-	defb 065h		;cd3e
-	defb 020h		;cd3f
-	defb 06dh		;cd40
-	defb 069h		;cd41
-	defb 073h		;cd42
-	defb 06dh		;cd43
-	defb 061h		;cd44
-	defb 074h		;cd45
-	defb 063h		;cd46
-	defb 068h		;cd47
-	defb 000h		;cd48
-b59_end:
+	defb "Overflow",000h		; ccb9
 
-; BLOCK 'b60' (start 0xcd49 end 0xcd5b)
-b60_start:
-	defb 053h		;cd49
-	defb 074h		;cd4a
-	defb 072h		;cd4b
-	defb 069h		;cd4c
-	defb 06eh		;cd4d
-	defb 067h		;cd4e
-	defb 020h		;cd4f
-	defb 073h		;cd50
-	defb 070h		;cd51
-	defb 061h		;cd52
-	defb 063h		;cd53
-	defb 065h		;cd54
-	defb 020h		;cd55
-	defb 066h		;cd56
-	defb 075h		;cd57
-	defb 06ch		;cd58
-	defb 06ch		;cd59
-	defb 000h		;cd5a
-b60_end:
+; error 7
+err_msg_07:
 
-; BLOCK 'b61' (start 0xcd5b end 0xcd6b)
-b61_start:
-	defb 053h		;cd5b
-	defb 074h		;cd5c
-	defb 072h		;cd5d
-	defb 069h		;cd5e
-	defb 06eh		;cd5f
-	defb 067h		;cd60
-	defb 020h		;cd61
-	defb 074h		;cd62
-	defb 06fh		;cd63
-	defb 06fh		;cd64
-	defb 020h		;cd65
-	defb 06ch		;cd66
-	defb 06fh		;cd67
-	defb 06eh		;cd68
-	defb 067h		;cd69
-	defb 000h		;cd6a
-b61_end:
+	defb "Memory full",000h		; ccc2
 
-; BLOCK 'b62' (start 0xcd6b end 0xcd89)
-b62_start:
-	defb 053h		;cd6b
-	defb 074h		;cd6c
-	defb 072h		;cd6d
-	defb 069h		;cd6e
-	defb 06eh		;cd6f
-	defb 067h		;cd70
-	defb 020h		;cd71
-	defb 065h		;cd72
-	defb 078h		;cd73
-	defb 070h		;cd74
-	defb 072h		;cd75
-	defb 065h		;cd76
-	defb 073h		;cd77
-	defb 073h		;cd78
-	defb 069h		;cd79
-	defb 06fh		;cd7a
-	defb 06eh		;cd7b
-	defb 020h		;cd7c
-	defb 074h		;cd7d
-	defb 06fh		;cd7e
-	defb 06fh		;cd7f
-	defb 020h		;cd80
-	defb 063h		;cd81
-	defb 06fh		;cd82
-	defb 06dh		;cd83
-	defb 070h		;cd84
-	defb 06ch		;cd85
-	defb 065h		;cd86
-	defb 078h		;cd87
-	defb 000h		;cd88
-b62_end:
+; error 8
+err_msg_08:
 
-; BLOCK 'b63' (start 0xcd89 end 0xcd99)
-b63_start:
-	defb 043h		;cd89
-	defb 061h		;cd8a
-	defb 06eh		;cd8b
-	defb 06eh		;cd8c
-	defb 06fh		;cd8d
-	defb 074h		;cd8e
-	defb 020h		;cd8f
-	defb 043h		;cd90
-	defb 04fh		;cd91
-	defb 04eh		;cd92
-	defb 054h		;cd93
-	defb 069h		;cd94
-	defb 06eh		;cd95
-	defb 075h		;cd96
-	defb 065h		;cd97
-	defb 000h		;cd98
-b63_end:
+	defb "Line does not exist",000h		; ccce
 
-; BLOCK 'b64' (start 0xcd99 end 0xcdaf)
-b64_start:
-	defb 055h		;cd99
-	defb 06eh		;cd9a
-	defb 06bh		;cd9b
-	defb 06eh		;cd9c
-	defb 06fh		;cd9d
-	defb 077h		;cd9e
-	defb 06eh		;cd9f
-	defb 020h		;cda0
-	defb 075h		;cda1
-	defb 073h		;cda2
-	defb 065h		;cda3
-	defb 072h		;cda4
-	defb 020h		;cda5
-	defb 066h		;cda6
-	defb 075h		;cda7
-	defb 06eh		;cda8
-	defb 063h		;cda9
-	defb 074h		;cdaa
-	defb 069h		;cdab
-	defb 06fh		;cdac
-	defb 06eh		;cdad
-	defb 000h		;cdae
-b64_end:
+; error 9
+err_msg_09:
 
-; BLOCK 'b65' (start 0xcdaf end 0xcdbe)
-b65_start:
-	defb 052h		;cdaf
-	defb 045h		;cdb0
-	defb 053h		;cdb1
-	defb 055h		;cdb2
-	defb 04dh		;cdb3
-	defb 045h		;cdb4
-	defb 020h		;cdb5
-	defb 06dh		;cdb6
-	defb 069h		;cdb7
-	defb 073h		;cdb8
-	defb 073h		;cdb9
-	defb 069h		;cdba
-	defb 06eh		;cdbb
-	defb 067h		;cdbc
-	defb 000h		;cdbd
-b65_end:
+	defb "Subscript out of range",000h		; cce2
 
-; BLOCK 'b66' (start 0xcdbe end 0xcdd0)
-b66_start:
-	defb 055h		;cdbe
-	defb 06eh		;cdbf
-	defb 065h		;cdc0
-	defb 078h		;cdc1
-	defb 070h		;cdc2
-	defb 065h		;cdc3
-	defb 063h		;cdc4
-	defb 074h		;cdc5
-	defb 065h		;cdc6
-	defb 064h		;cdc7
-	defb 020h		;cdc8
-	defb 052h		;cdc9
-	defb 045h		;cdca
-	defb 053h		;cdcb
-	defb 055h		;cdcc
-	defb 04dh		;cdcd
-	defb 045h		;cdce
-	defb 000h		;cdcf
-b66_end:
+; error 10
+err_msg_10:
 
-; BLOCK 'b67' (start 0xcdd0 end 0xcde5)
-b67_start:
-	defb 044h		;cdd0
-	defb 069h		;cdd1
-	defb 072h		;cdd2
-	defb 065h		;cdd3
-	defb 063h		;cdd4
-	defb 074h		;cdd5
-	defb 020h		;cdd6
-	defb 063h		;cdd7
-	defb 06fh		;cdd8
-	defb 06dh		;cdd9
-	defb 06dh		;cdda
-	defb 061h		;cddb
-	defb 06eh		;cddc
-	defb 064h		;cddd
-	defb 020h		;cdde
-	defb 066h		;cddf
-	defb 06fh		;cde0
-	defb 075h		;cde1
-	defb 06eh		;cde2
-	defb 064h		;cde3
-	defb 000h		;cde4
-b67_end:
+	defb "Array already dimensioned",000h		; ccf9
 
-; BLOCK 'b68' (start 0xcde5 end 0xcdf5)
-b68_start:
-	defb 04fh		;cde5
-	defb 070h		;cde6
-	defb 065h		;cde7
-	defb 072h		;cde8
-	defb 061h		;cde9
-	defb 06eh		;cdea
-	defb 064h		;cdeb
-	defb 020h		;cdec
-	defb 06dh		;cded
-	defb 069h		;cdee
-	defb 073h		;cdef
-	defb 073h		;cdf0
-	defb 069h		;cdf1
-	defb 06eh		;cdf2
-	defb 067h		;cdf3
-	defb 000h		;cdf4
-b68_end:
+; error 11
+err_msg_11:
 
-; BLOCK 'b69' (start 0xcdf5 end 0xce03)
-b69_start:
-	defb 04ch		;cdf5
-	defb 069h		;cdf6
-	defb 06eh		;cdf7
-	defb 065h		;cdf8
-	defb 020h		;cdf9
-	defb 074h		;cdfa
-	defb 06fh		;cdfb
-	defb 06fh		;cdfc
-	defb 020h		;cdfd
-	defb 06ch		;cdfe
-	defb 06fh		;cdff
-	defb 06eh		;ce00
-	defb 067h		;ce01
-	defb 000h		;ce02
-b69_end:
+	defb "Division by zero",000h		; cd13
 
-; BLOCK 'b70' (start 0xce03 end 0xce0b)
-b70_start:
-	defb 045h		;ce03
-	defb 04fh		;ce04
-	defb 046h		;ce05
-	defb 020h		;ce06
-	defb 06dh		;ce07
-	defb 065h		;ce08
-	defb 074h		;ce09
-	defb 000h		;ce0a
-b70_end:
+; error 12
+err_msg_12:
 
-; BLOCK 'b71' (start 0xce0b end 0xce1b)
-b71_start:
-	defb 046h		;ce0b
-	defb 069h		;ce0c
-	defb 06ch		;ce0d
-	defb 065h		;ce0e
-	defb 020h		;ce0f
-	defb 074h		;ce10
-	defb 079h		;ce11
-	defb 070h		;ce12
-	defb 065h		;ce13
-	defb 020h		;ce14
-	defb 065h		;ce15
-	defb 072h		;ce16
-	defb 072h		;ce17
-	defb 06fh		;ce18
-	defb 072h		;ce19
-	defb 000h		;ce1a
-b71_end:
+	defb "Invalid direct command",000h		; cd24
 
-; BLOCK 'b72' (start 0xce1b end 0xce28)
-b72_start:
-	defb 04eh		;ce1b
-	defb 045h		;ce1c
-	defb 058h		;ce1d
-	defb 054h		;ce1e
-	defb 020h		;ce1f
-	defb 06dh		;ce20
-	defb 069h		;ce21
-	defb 073h		;ce22
-	defb 073h		;ce23
-	defb 069h		;ce24
-	defb 06eh		;ce25
-	defb 067h		;ce26
-	defb 000h		;ce27
-b72_end:
+; error 13
+err_msg_13:
 
-; BLOCK 'b73' (start 0xce28 end 0xce3a)
-b73_start:
-	defb 046h		;ce28
-	defb 069h		;ce29
-	defb 06ch		;ce2a
-	defb 065h		;ce2b
-	defb 020h		;ce2c
-	defb 061h		;ce2d
-	defb 06ch		;ce2e
-	defb 072h		;ce2f
-	defb 065h		;ce30
-	defb 061h		;ce31
-	defb 064h		;ce32
-	defb 079h		;ce33
-	defb 020h		;ce34
-	defb 06fh		;ce35
-	defb 070h		;ce36
-	defb 065h		;ce37
-	defb 06eh		;ce38
-	defb 000h		;ce39
-b73_end:
+	defb "Type mismatch",000h		; cd3b
 
-; BLOCK 'b74' (start 0xce3a end 0xce4a)
-b74_start:
-	defb 055h		;ce3a
-	defb 06eh		;ce3b
-	defb 06bh		;ce3c
-	defb 06eh		;ce3d
-	defb 06fh		;ce3e
-	defb 077h		;ce3f
-	defb 06eh		;ce40
-	defb 020h		;ce41
-	defb 063h		;ce42
-	defb 06fh		;ce43
-	defb 06dh		;ce44
-	defb 06dh		;ce45
-	defb 061h		;ce46
-	defb 06eh		;ce47
-	defb 064h		;ce48
-	defb 000h		;ce49
-b74_end:
+; error 14
+err_msg_14:
 
-; BLOCK 'b75' (start 0xce4a end 0xce57)
-b75_start:
-	defb 057h		;ce4a
-	defb 045h		;ce4b
-	defb 04eh		;ce4c
-	defb 044h		;ce4d
-	defb 020h		;ce4e
-	defb 06dh		;ce4f
-	defb 069h		;ce50
-	defb 073h		;ce51
-	defb 073h		;ce52
-	defb 069h		;ce53
-	defb 06eh		;ce54
-	defb 067h		;ce55
-	defb 000h		;ce56
-b75_end:
+	defb "String space full",000h		; cd49
 
-; BLOCK 'b76' (start 0xce57 end 0xce67)
-b76_start:
-	defb 055h		;ce57
-	defb 06eh		;ce58
-	defb 065h		;ce59
-	defb 078h		;ce5a
-	defb 070h		;ce5b
-	defb 065h		;ce5c
-	defb 063h		;ce5d
-	defb 074h		;ce5e
-	defb 065h		;ce5f
-	defb 064h		;ce60
-	defb 020h		;ce61
-	defb 057h		;ce62
-	defb 045h		;ce63
-	defb 04eh		;ce64
-	defb 044h		;ce65
-	defb 000h		;ce66
-b76_end:
+; error 15
+err_msg_15:
 
-; BLOCK 'b77' (start 0xce67 end 0xced1)
-b77_start:
+	defb "String too long",000h		; cd5b
+
+; error 16
+err_msg_16:
+
+	defb "String expression too complex",000h		; cd6b
+
+; error 17
+err_msg_17:
+
+	defb "Cannot CONTinue",000h		; cd89
+
+; error 18
+err_msg_18:
+
+	defb "Unknown user function",000h		; cd99
+
+; error 19
+err_msg_19:
+
+	defb "RESUME missing",000h		; cdaf
+
+; error 20
+err_msg_20:
+
+	defb "Unexpected RESUME",000h		; cdbe
+
+; error 21
+err_msg_21:
+
+	defb "Direct command found",000h		; cdd0
+
+; error 22
+err_msg_22:
+
+	defb "Operand missing",000h		; cde5
+
+; error 23
+err_msg_23:
+
+	defb "Line too long",000h		; cdf5
+
+; error 24
+err_msg_24:
+
+	defb "EOF met",000h		; ce03
+
+; error 25
+err_msg_25:
+
+	defb "File type error",000h		; ce0b
+
+; error 26
+err_msg_26:
+
+	defb "NEXT missing",000h		; ce1b
+
+; error 27
+err_msg_27:
+
+	defb "File already open",000h		; ce28
+
+; error 28
+err_msg_28:
+
+	defb "Unknown command",000h		; ce3a
+
+; error 29
+err_msg_29:
+
+	defb "WEND missing",000h		; ce4a
+
+; error 30
+err_msg_30:
+
+	defb "Unexpected WEND",000h		; ce57
+sub_ce67h:
 	call sub_ce86h		;ce67
 	push af			;ce6a
 	jr lce75h		;ce6b
@@ -2910,7 +2283,7 @@ lceabh:
 	jp raise_error		;cead
 sub_ceb0h:
 	ld bc,00001h		;ceb0
-	ld de,lffffh		;ceb3
+	ld de,0ffffh		;ceb3
 	call sub_dd55h		;ceb6
 	call nc,sub_dd51h		;ceb9
 	ret c			;cebc
@@ -2926,16 +2299,9 @@ sub_ceb0h:
 	ret c			;cecd
 lceceh:
 	call expect_char_inline		;cece
-b77_end:
 
-; BLOCK 'b78' (start 0xced1 end 0xced2)
-b78_start:
-	defb 0f5h		;ced1
-b78_end:
-
-; BLOCK 'b79' (start 0xced2 end 0xcf81)
-b79_start:
-	ld de,lffffh		;ced2
+	defb 0f5h		; ced1
+	ld de,0ffffh		;ced2
 	ret z			;ced5
 	call sub_dd55h		;ced6
 	ret c			;ced9
@@ -3051,105 +2417,45 @@ lcf59h:
 	pop bc			;cf7b
 	call sub_cfafh		;cf7c
 	jr lcf0ch		;cf7f
-b79_end:
 
-; BLOCK 'b80' (start 0xcf81 end 0xcf82)
-b80_start:
-	defb 00ch		;cf81
-b80_end:
-
-; BLOCK 'b81' (start 0xcf82 end 0xcf85)
-b81_start:
+sel_cf81:
+	defb 00ch		; cf81  selector byte for following JP
 	jp sub_fccch		;cf82
-b81_end:
 
-; BLOCK 'b82' (start 0xcf85 end 0xcf86)
-b82_start:
-	defb 00ch		;cf85
-b82_end:
-
-; BLOCK 'b83' (start 0xcf86 end 0xcf89)
-b83_start:
+sel_cf85:
+	defb 00ch		; cf85  selector byte for following JP
 	jp lfce1h		;cf86
-b83_end:
 
-; BLOCK 'b84' (start 0xcf89 end 0xcf8a)
-b84_start:
-	defb 012h		;cf89
-b84_end:
-
-; BLOCK 'b85' (start 0xcf8a end 0xcf8d)
-b85_start:
+sel_cf89:
+	defb 012h		; cf89  selector byte for following JP
 	jp lfcf5h		;cf8a
-b85_end:
 
-; BLOCK 'b86' (start 0xcf8d end 0xcf8e)
-b86_start:
-	defb 012h		;cf8d
-b86_end:
-
-; BLOCK 'b87' (start 0xcf8e end 0xcf91)
-b87_start:
+sel_cf8d:
+	defb 012h		; cf8d  selector byte for following JP
 	jp lfd12h		;cf8e
-b87_end:
 
-; BLOCK 'b88' (start 0xcf91 end 0xcf92)
-b88_start:
-	defb 016h		;cf91
-b88_end:
-
-; BLOCK 'b89' (start 0xcf92 end 0xcf95)
-b89_start:
+sel_cf91:
+	defb 016h		; cf91  selector byte for following JP
 	jp ld4f4h		;cf92
-b89_end:
 
-; BLOCK 'b90' (start 0xcf95 end 0xcf96)
-b90_start:
-	defb 010h		;cf95
-b90_end:
-
-; BLOCK 'b91' (start 0xcf96 end 0xcf99)
-b91_start:
+sel_cf95:
+	defb 010h		; cf95  selector byte for following JP
 	jp lfd37h		;cf96
-b91_end:
 
-; BLOCK 'b92' (start 0xcf99 end 0xcf9a)
-b92_start:
-	defb 006h		;cf99
-b92_end:
-
-; BLOCK 'b93' (start 0xcf9a end 0xcf9d)
-b93_start:
+sel_cf99:
+	defb 006h		; cf99  selector byte for following JP
 	jp lfd58h		;cf9a
-b93_end:
 
-; BLOCK 'b94' (start 0xcf9d end 0xcf9e)
-b94_start:
-	defb 00eh		;cf9d
-b94_end:
-
-; BLOCK 'b95' (start 0xcf9e end 0xcfa1)
-b95_start:
+sel_cf9d:
+	defb 00eh		; cf9d  selector byte for following JP
 	jp lfd49h		;cf9e
-b95_end:
 
-; BLOCK 'b96' (start 0xcfa1 end 0xcfa2)
-b96_start:
-	defb 004h		;cfa1
-b96_end:
-
-; BLOCK 'b97' (start 0xcfa2 end 0xcfa5)
-b97_start:
+sel_cfa1:
+	defb 004h		; cfa1  selector byte for following JP
 	jp lfd63h		;cfa2
-b97_end:
 
-; BLOCK 'b98' (start 0xcfa5 end 0xcfa6)
-b98_start:
-	defb 002h		;cfa5
-b98_end:
-
-; BLOCK 'b99' (start 0xcfa6 end 0xcff2)
-b99_start:
+sel_cfa5:
+	defb 002h		; cfa5  selector byte for following JP
 	jp lfd6dh		;cfa6
 lcfa9h:
 	ld a,(bc)			;cfa9
@@ -3163,19 +2469,22 @@ sub_cfafh:
 	add a,0ffh		;cfb3
 	sbc a,a			;cfb5
 	jp sub_ff05h		;cfb6
+lcfb9h:
 	dec hl			;cfb9
 	ld b,014h		;cfba
 	call sub_cf07h		;cfbc
 	jp lfd89h		;cfbf
+lcfc2h:
 	dec hl			;cfc2
 	ld b,008h		;cfc3
 	call sub_cf07h		;cfc5
 	jp lfd77h		;cfc8
 sub_cfcbh:
 	call sub_dd3fh		;cfcb
+lcfceh:
 	jr z,lcfedh		;cfce
 	cp 00eh		;cfd0
-	jr c,b100_end		;cfd2
+	jr c,ld00dh		;cfd2
 	cp 020h		;cfd4
 	jr c,ld02ch		;cfd6
 	cp 022h		;cfd8
@@ -3183,48 +2492,35 @@ sub_cfcbh:
 	cp 0ffh		;cfdd
 	jp z,ld080h		;cfdf
 	push hl			;cfe2
-	ld hl,b99_end		;cfe3
+	ld hl,key_table_cff2		;cfe3
 	call sub_ff93h		;cfe6
 	ex (sp),hl			;cfe9
 	jp sub_dd3fh		;cfea
 lcfedh:
 	ld e,016h		;cfed
 	jp raise_error		;cfef
-b99_end:
 
-; BLOCK 'b100' (start 0xcff2 end 0xd00d)
-b100_start:
-	defb 008h		;cff2
-	defb 078h		;cff3
-	defb 0d0h		;cff4
-	defb 0f5h		;cff5
-	defb 0b9h		;cff6
-	defb 0cfh		;cff7
-	defb 0f4h		;cff8
-	defb 0ceh		;cff9
-	defb 0cfh		;cffa
-	defb 028h		;cffb
-	defb 070h		;cffc
-	defb 0d0h		;cffd
-	defb 0feh		;cffe
-	defb 0c2h		;cfff
-	defb 0cfh		;d000
-	defb 0e3h		;d001
-	defb 0eeh		;d002
-	defb 0d0h		;d003
-	defb 0e4h		;d004
-	defb 030h		;d005
-	defb 0d1h		;d006
-	defb 0ach		;d007
-	defb 04bh		;d008
-	defb 0f9h		;d009
-	defb 040h		;d00a
-	defb 0fah		;d00b
-	defb 0d0h		;d00c
-b100_end:
-
-; BLOCK 'b101' (start 0xd00d end 0xd076)
-b101_start:
+key_table_cff2:
+; ---- key->handler search table (routine &FF93): count, then (addr,key) entries, then default addr ----
+	defb 008h		; cff2  count
+	defw ld078h		; cff3
+	defb 0f5h		; cff5  key 
+	defw lcfb9h		; cff6
+	defb 0f4h		; cff8  key 
+	defw lcfceh		; cff9
+	defb 028h		; cffb  key '('
+	defw sub_d070h		; cffc
+	defb 0feh		; cffe  key 
+	defw lcfc2h		; cfff
+	defb 0e3h		; d001  key 
+	defw ld0eeh		; d002
+	defb 0e4h		; d004  key 
+	defw ld130h		; d005
+	defb 0ach		; d007  key 
+	defw lf94bh		; d008
+	defb 040h		; d00a  key '@'
+	defw ld0fah		; d00b  default
+ld00dh:
 	call sub_d690h		;d00d
 	jr nc,ld01dh		;d010
 	cp 003h		;d012
@@ -3300,16 +2596,10 @@ ld06dh:
 sub_d070h:
 	call sub_cefbh		;d070
 	call expect_char_inline		;d073
-b101_end:
 
-; BLOCK 'b102' (start 0xd076 end 0xd077)
-b102_start:
-	defb 029h		;d076
-b102_end:
-
-; BLOCK 'b103' (start 0xd077 end 0xd092)
-b103_start:
+	defb 029h		; d076  ; inline char ')'
 	ret			;d077
+ld078h:
 	call 0ac0dh		;d078
 ld07bh:
 	ld e,002h		;d07b
@@ -3325,15 +2615,8 @@ ld080h:
 	jp c,ld0bbh		;d08c
 ld08fh:
 	call expect_char_inline		;d08f
-b103_end:
 
-; BLOCK 'b104' (start 0xd092 end 0xd093)
-b104_start:
-	defb 028h		;d092
-b104_end:
-
-; BLOCK 'b105' (start 0xd093 end 0xd11a)
-b105_start:
+	defb 028h		; d092  ; inline char '('
 	ld a,c			;d093
 	add a,a			;d094
 	add a,01eh		;d095
@@ -3353,7 +2636,7 @@ ld0a9h:
 ld0aeh:
 	push hl			;d0ae
 	ld b,000h		;d0af
-	ld hl,b117_end		;d0b1
+	ld hl,fn_dispatch_table		;d0b1
 	add hl,bc			;d0b4
 	ld a,(hl)			;d0b5
 	inc hl			;d0b6
@@ -3396,12 +2679,14 @@ sub_d0dch:
 	call sub_fe7ch		;d0e9
 	pop hl			;d0ec
 	ret			;d0ed
+ld0eeh:
 	push hl			;d0ee
 	call sub_cadfh		;d0ef
 	jr ld102h		;d0f2
 	push hl			;d0f4
 	ld hl,(0ae7bh)		;d0f5
 	jr ld102h		;d0f8
+ld0fah:
 	call sub_d690h		;d0fa
 	jp nc,lceabh		;d0fd
 	push hl			;d100
@@ -3420,16 +2705,10 @@ ld112h:
 	call sub_ff0dh		;d112
 	pop hl			;d115
 	ret			;d116
+ld117h:
 	call expect_char_inline		;d117
-b105_end:
 
-; BLOCK 'b106' (start 0xd11a end 0xd11b)
-b106_start:
-	defb 0e4h		;d11a
-b106_end:
-
-; BLOCK 'b107' (start 0xd11b end 0xd150)
-b107_start:
+	defb 0e4h		; d11a
 	ex de,hl			;d11b
 	call sub_ddd6h		;d11c
 	ex de,hl			;d11f
@@ -3442,6 +2721,7 @@ b107_start:
 	ld (hl),d			;d12b
 	ex de,hl			;d12c
 	jp sub_e8efh		;d12d
+ld130h:
 	call sub_d6a2h		;d130
 	push bc			;d133
 	push hl			;d134
@@ -3457,19 +2737,12 @@ b107_start:
 	call sub_da07h		;d141
 	ld a,(hl)			;d144
 	cp 028h		;d145
-	jr nz,b114_end		;d147
+	jr nz,ld175h		;d147
 	call sub_dd3fh		;d149
 	ex (sp),hl			;d14c
 	call expect_char_inline		;d14d
-b107_end:
 
-; BLOCK 'b108' (start 0xd150 end 0xd151)
-b108_start:
-	defb 028h		;d150
-b108_end:
-
-; BLOCK 'b109' (start 0xd151 end 0xd169)
-b109_start:
+	defb 028h		; d150  ; inline char '('
 	ex (sp),hl			;d151
 ld152h:
 	call sub_da4bh		;d152
@@ -3484,49 +2757,22 @@ ld152h:
 	jr nc,ld16ch		;d163
 	ex (sp),hl			;d165
 	call expect_char_inline		;d166
-b109_end:
 
-; BLOCK 'b110' (start 0xd169 end 0xd16a)
-b110_start:
-	defb 02ch		;d169
-b110_end:
-
-; BLOCK 'b111' (start 0xd16a end 0xd16f)
-b111_start:
+	defb 02ch		; d169  ; inline char ','
 	jr ld152h		;d16a
 ld16ch:
 	call expect_char_inline		;d16c
-b111_end:
 
-; BLOCK 'b112' (start 0xd16f end 0xd170)
-b112_start:
-	defb 029h		;d16f
-b112_end:
-
-; BLOCK 'b113' (start 0xd170 end 0xd174)
-b113_start:
+	defb 029h		; d16f  ; inline char ')'
 	ex (sp),hl			;d170
 	call expect_char_inline		;d171
-b113_end:
 
-; BLOCK 'b114' (start 0xd174 end 0xd175)
-b114_start:
-	defb 029h		;d174
-b114_end:
-
-; BLOCK 'b115' (start 0xd175 end 0xd17b)
-b115_start:
+	defb 029h		; d174  ; inline char ')'
+ld175h:
 	call sub_da27h		;d175
 	call expect_char_inline		;d178
-b115_end:
 
-; BLOCK 'b116' (start 0xd17b end 0xd17c)
-b116_start:
-	defb 0efh		;d17b
-b116_end:
-
-; BLOCK 'b117' (start 0xd17c end 0xd190)
-b117_start:
+	defb 0efh		; d17b
 	call sub_cefbh		;d17c
 	jp nz,ld07bh		;d17f
 	call sub_da30h		;d182
@@ -3535,61 +2781,58 @@ b117_start:
 	pop hl			;d18b
 	pop af			;d18c
 	jp sub_fed7h		;d18d
-b117_end:
 
-; BLOCK 'b118' (start 0xd190 end 0xd1ea)
-b118_start:
-	defw 0f8bah		;d190
-	defw 0f8eah		;d192
-	defw 0f8c4h		;d194
-	defw 0faa1h		;d196
-	defw 0f93ch		;d198
-	defw 0d1eeh		;d19a
-	defw 0d1eah		;d19c
-	defw 0c276h		;d19e
-	defw 0f943h		;d1a0
-	defw 0d219h		;d1a2
-	defw 0fa36h		;d1a4
-	defw 0c4e9h		;d1a6
-	defw 0c4eeh		;d1a8
-	defw 0ceabh		;d1aa
-	defw 0c262h		;d1ac
-	defw 0fd85h		;d1ae
-	defw 0fa10h		;d1b0
-	defw 0d53eh		;d1b2
-	defw 0fa16h		;d1b4
-	defw 0fe8dh		;d1b6
-	defw 0d534h		;d1b8
-	defw 0feech		;d1ba
-	defw 0d520h		;d1bc
-	defw 0fde8h		;d1be
-	defw 0fc2dh		;d1c0
-	defw 0d409h		;d1c2
-	defw 0f16dh		;d1c4
-	defw 0fdedh		;d1c6
-	defw 0d423h		;d1c8
-	defw 0fa0ah		;d1ca
-	defw 0d52ah		;d1cc
-	defw 0d525h		;d1ce
-	defw 0f834h		;d1d0
-	defw 0f158h		;d1d2
-	defw 0c99fh		;d1d4
-	defw 0ff02h		;d1d6
-	defw 0d52fh		;d1d8
-	defw 0fa57h		;d1da
-	defw 0d329h		;d1dc
-	defw 0d4efh		;d1de
-	defw 0f91eh		;d1e0
-	defw 0d539h		;d1e2
-	defw 0fec2h		;d1e4
-	defw 0f842h		;d1e6
-	defw 0fa77h		;d1e8
-b118_end:
-
-; BLOCK 'b119' (start 0xd1ea end 0xd217)
-b119_start:
+fn_dispatch_table:
+; ---- function/operator dispatch table (45 entries; token mapping not verified) ----
+	defw lf8bah		; d190  [0]
+	defw lf8eah		; d192  [1]
+	defw lf8c4h		; d194  [2]
+	defw lfaa1h		; d196  [3]
+	defw lf93ch		; d198  [4]
+	defw ld1eeh		; d19a  [5]
+	defw ld1eah		; d19c  [6]
+	defw lc276h		; d19e  [7]
+	defw lf943h		; d1a0  [8]
+	defw ld219h		; d1a2  [9]
+	defw lfa36h		; d1a4  [10]
+	defw lc4e9h		; d1a6  [11]
+	defw lc4eeh		; d1a8  [12]
+	defw lceabh		; d1aa  [13]
+	defw lc262h		; d1ac  [14]
+	defw lfd85h		; d1ae  [15]
+	defw lfa10h		; d1b0  [16]
+	defw ld53eh		; d1b2  [17]
+	defw lfa16h		; d1b4  [18]
+	defw sub_fe8dh		; d1b6  [19]
+	defw ld534h		; d1b8  [20]
+	defw lfeech		; d1ba  [21]
+	defw ld520h		; d1bc  [22]
+	defw lfde8h		; d1be  [23]
+	defw lfc2dh		; d1c0  [24]
+	defw ld409h		; d1c2  [25]
+	defw lf16dh		; d1c4  [26]
+	defw lfdedh		; d1c6  [27]
+	defw ld423h		; d1c8  [28]
+	defw lfa0ah		; d1ca  [29]
+	defw ld52ah		; d1cc  [30]
+	defw ld525h		; d1ce  [31]
+	defw lf834h		; d1d0  [32]
+	defw lf158h		; d1d2  [33]
+	defw lc99fh		; d1d4  [34]
+	defw lff02h		; d1d6  [35]
+	defw ld52fh		; d1d8  [36]
+	defw lfa57h		; d1da  [37]
+	defw ld329h		; d1dc  [38]
+	defw ld4efh		; d1de  [39]
+	defw lf91eh		; d1e0  [40]
+	defw ld539h		; d1e2  [41]
+	defw sub_fec2h		; d1e4  [42]
+	defw lf842h		; d1e6  [43]
+	defw lfa77h		; d1e8  [44]
+ld1eah:
 	ld b,0ffh		;d1ea
 	jr ld1f0h		;d1ec
+ld1eeh:
 	ld b,001h		;d1ee
 ld1f0h:
 	call sub_cefbh		;d1f0
@@ -3615,31 +2858,18 @@ ld211h:
 	jr ld1f3h		;d212
 ld214h:
 	call expect_char_inline		;d214
-b119_end:
 
-; BLOCK 'b120' (start 0xd217 end 0xd218)
-b120_start:
-	defb 029h		;d217
-b120_end:
-
-; BLOCK 'b121' (start 0xd218 end 0xd22b)
-b121_start:
+	defb 029h		; d217  ; inline char ')'
 	ret			;d218
+ld219h:
 	call sub_cefbh		;d219
 	call sub_ff53h		;d21c
 	call sub_dd55h		;d21f
 	ld de,00000h		;d222
 	call c,sub_ce86h		;d225
 	call expect_char_inline		;d228
-b121_end:
 
-; BLOCK 'b122' (start 0xd22b end 0xd22c)
-b122_start:
-	defb 029h		;d22b
-b122_end:
-
-; BLOCK 'b123' (start 0xd22c end 0xd2c9)
-b123_start:
+	defb 029h		; d22b  ; inline char ')'
 	push hl			;d22c
 	push de			;d22d
 	ld hl,00027h		;d22e
@@ -3654,6 +2884,7 @@ b123_start:
 	call sub_fdafh		;d241
 	pop hl			;d244
 	ret			;d245
+ld246h:
 	ret nz			;d246
 	push hl			;d247
 	call sub_d2adh		;d248
@@ -3662,10 +2893,11 @@ b123_start:
 	call sub_f671h		;d251
 	pop hl			;d254
 	ret			;d255
-sub_d256h:
+ld256h:
 	call sub_d273h		;d256
 	call sub_f637h		;d259
 	jp CAS_OUT_OPEN		;d25c
+ld25fh:
 	call sub_d26ah		;d25f
 	cp 016h		;d262
 	ret z			;d264
@@ -3725,18 +2957,12 @@ sub_d2adh:
 	pop de			;d2bd
 	pop bc			;d2be
 	ret			;d2bf
-	call b76_end		;d2c0
+ld2c0h:
+	call sub_ce67h		;d2c0
 	ld (0adb2h),a		;d2c3
 	call expect_char_inline		;d2c6
-b123_end:
 
-; BLOCK 'b124' (start 0xd2c9 end 0xd2ca)
-b124_start:
-	defb 02ch		;d2c9
-b124_end:
-
-; BLOCK 'b125' (start 0xd2ca end 0xd37a)
-b125_start:
+	defb 02ch		; d2c9  ; inline char ','
 	call sub_d3ffh		;d2ca
 	ld (0adb5h),de		;d2cd
 	call sub_dd55h		;d2d1
@@ -3771,16 +2997,18 @@ sub_d30dh:
 	ld a,c			;d315
 	ret z			;d316
 sub_d317h:
-	call b76_end		;d317
+	call sub_ce67h		;d317
 	cp b			;d31a
 	ret c			;d31b
 	jr ld349h		;d31c
+ld31eh:
 	ld b,008h		;d31e
 	call sub_d317h		;d320
 	push hl			;d323
 	call SOUND_RELEASE		;d324
 	pop hl			;d327
 	ret			;d328
+ld329h:
 	call sub_fe8dh		;d329
 	ld a,l			;d32c
 	or a			;d32d
@@ -3806,6 +3034,7 @@ sub_d341h:
 ld349h:
 	ld e,005h		;d349
 	jp raise_error		;d34b
+ld34eh:
 	call sub_ce6dh		;d34e
 	cp 010h		;d351
 	jr nc,ld349h		;d353
@@ -3829,20 +3058,14 @@ ld367h:
 	or 080h		;d374
 	ld c,a			;d376
 	call expect_char_inline		;d377
-b125_end:
 
-; BLOCK 'b126' (start 0xd37a end 0xd37b)
-b126_start:
-	defb 02ch		;d37a
-b126_end:
-
-; BLOCK 'b127' (start 0xd37b end 0xd3c9)
-b127_start:
+	defb 02ch		; d37a  ; inline char ','
 	jp lce91h		;d37b
 ld37eh:
 	ld b,080h		;d37e
 	call sub_d317h		;d380
 	jr ld3c5h		;d383
+ld385h:
 	call sub_d341h		;d385
 	ld a,d			;d388
 	or a			;d389
@@ -3887,29 +3110,15 @@ ld3c0h:
 ld3c5h:
 	ld c,a			;d3c5
 	call expect_char_inline		;d3c6
-b127_end:
 
-; BLOCK 'b128' (start 0xd3c9 end 0xd3ca)
-b128_start:
-	defb 02ch		;d3c9
-b128_end:
-
-; BLOCK 'b129' (start 0xd3ca end 0xd3d1)
-b129_start:
+	defb 02ch		; d3c9  ; inline char ','
 	call sub_d341h		;d3ca
 	ld b,e			;d3cd
 ld3ceh:
 	call expect_char_inline		;d3ce
-b129_end:
 
-; BLOCK 'b130' (start 0xd3d1 end 0xd3d2)
-b130_start:
-	defb 02ch		;d3d1
-b130_end:
-
-; BLOCK 'b131' (start 0xd3d2 end 0xd446)
-b131_start:
-	call b76_end		;d3d2
+	defb 02ch		; d3d1  ; inline char ','
+	call sub_ce67h		;d3d2
 	ld d,a			;d3d5
 	ld e,b			;d3d6
 	ret			;d3d7
@@ -3948,18 +3157,20 @@ sub_d3ffh:
 	and 0f0h		;d403
 	jp nz,ld349h		;d405
 	ret			;d408
+ld409h:
 	call sub_fe8dh		;d409
 	ld de,00050h		;d40c
 	call sub_ffb8h		;d40f
 	jr nc,ld436h		;d412
 	ld a,l			;d414
 	call KM_TEST_KEY		;d415
-	ld hl,lffffh		;d418
+	ld hl,0ffffh		;d418
 	jr z,ld420h		;d41b
 	ld l,c			;d41d
 	ld h,000h		;d41e
 ld420h:
 	jp sub_ff0dh		;d420
+ld423h:
 	call KM_GET_JOYSTICK		;d423
 	ex de,hl			;d426
 	call sub_fe8dh		;d427
@@ -3975,21 +3186,15 @@ ld430h:
 	jp z,sub_ff0ah		;d433
 ld436h:
 	jp ld349h		;d436
+ld439h:
 	cp 08dh		;d439
 	jr z,ld456h		;d43b
 	ld a,020h		;d43d
 	call sub_d317h		;d43f
 	push af			;d442
 	call expect_char_inline		;d443
-b131_end:
 
-; BLOCK 'b132' (start 0xd446 end 0xd447)
-b132_start:
-	defb 02ch		;d446
-b132_end:
-
-; BLOCK 'b133' (start 0xd447 end 0xd464)
-b133_start:
+	defb 02ch		; d446  ; inline char ','
 	call sub_ce9fh		;d447
 	ld c,b			;d44a
 	pop af			;d44b
@@ -4002,20 +3207,13 @@ b133_start:
 	ret			;d455
 ld456h:
 	call sub_dd3fh		;d456
-	call b76_end		;d459
+	call sub_ce67h		;d459
 	ld c,a			;d45c
 	cp 050h		;d45d
 	jr nc,ld436h		;d45f
 	call expect_char_inline		;d461
-b133_end:
 
-; BLOCK 'b134' (start 0xd464 end 0xd465)
-b134_start:
-	defb 02ch		;d464
-b134_end:
-
-; BLOCK 'b135' (start 0xd465 end 0xd4b6)
-b135_start:
+	defb 02ch		; d464  ; inline char ','
 	ld b,002h		;d465
 	call sub_d317h		;d467
 	rra			;d46a
@@ -4036,13 +3234,14 @@ sub_d484h:
 	call sub_dd55h		;d484
 	ret nc			;d487
 	push de			;d488
-	call b76_end		;d489
+	call sub_ce67h		;d489
 	ld b,a			;d48c
 	ex (sp),hl			;d48d
 	ld a,c			;d48e
 	call sub_fff8h		;d48f
 	pop hl			;d492
 	ret			;d493
+ld494h:
 	cp 0a4h		;d494
 	ld bc,KM_SET_DELAY		;d496
 	jr z,ld4abh		;d499
@@ -4059,15 +3258,8 @@ ld4abh:
 	call sub_ce6dh		;d4af
 	ld c,a			;d4b2
 	call expect_char_inline		;d4b3
-b135_end:
 
-; BLOCK 'b136' (start 0xd4b6 end 0xd4b7)
-b136_start:
-	defb 02ch		;d4b6
-b136_end:
-
-; BLOCK 'b137' (start 0xd4b7 end 0xd543)
-b137_start:
+	defb 02ch		; d4b6  ; inline char ','
 	call sub_ce6dh		;d4b7
 	ld e,a			;d4ba
 	ld d,c			;d4bb
@@ -4098,17 +3290,20 @@ ld4dbh:
 	call 0bd76h		;d4e2
 	pop hl			;d4e5
 	ret			;d4e6
+ld4e7h:
 	ld a,0ffh		;d4e7
 	jr ld4ech		;d4e9
+ld4ebh:
 	xor a			;d4eb
 ld4ech:
 	jp 0bd73h		;d4ec
+ld4efh:
 	ld bc,0bd79h		;d4ef
 	jr ld50ah		;d4f2
 ld4f4h:
 	push hl			;d4f4
 	push bc			;d4f5
-	call sub_feech		;d4f6
+	call lfeech		;d4f6
 	ex de,hl			;d4f9
 	ld hl,0adcbh		;d4fa
 	call KM_FLUSH		;d4fd
@@ -4128,53 +3323,34 @@ ld50ah:
 sub_d519h:
 	push bc			;d519
 	push de			;d51a
-	call sub_feech		;d51b
+	call lfeech		;d51b
 	pop de			;d51e
 	ret			;d51f
+ld520h:
 	ld bc,0bd85h		;d520
 	jr ld50ah		;d523
+ld525h:
 	ld bc,0bd82h		;d525
 	jr ld50ah		;d528
+ld52ah:
 	ld bc,0bd7fh		;d52a
 	jr ld50ah		;d52d
+ld52fh:
 	ld bc,0bd88h		;d52f
 	jr ld50ah		;d532
+ld534h:
 	ld bc,0bd8bh		;d534
 	jr ld50ah		;d537
+ld539h:
 	ld bc,0bd8eh		;d539
 	jr ld50ah		;d53c
+ld53eh:
 	ld bc,0bd91h		;d53e
 	jr ld50ah		;d541
-b137_end:
 
-; BLOCK 'b138' (start 0xd543 end 0xd559)
-b138_start:
-	defb 052h		;d543
-	defb 061h		;d544
-	defb 06eh		;d545
-	defb 064h		;d546
-	defb 06fh		;d547
-	defb 06dh		;d548
-	defb 020h		;d549
-	defb 06eh		;d54a
-	defb 075h		;d54b
-	defb 06dh		;d54c
-	defb 062h		;d54d
-	defb 065h		;d54e
-	defb 072h		;d54f
-	defb 020h		;d550
-	defb 073h		;d551
-	defb 065h		;d552
-	defb 065h		;d553
-	defb 064h		;d554
-	defb 020h		;d555
-	defb 03fh		;d556
-	defb 020h		;d557
-	defb 000h		;d558
-b138_end:
-
-; BLOCK 'b139' (start 0xd559 end 0xd592)
-b139_start:
+str_d543:
+	defb "Random number seed ? ",000h		; d543
+ld559h:
 	jr z,ld561h		;d559
 	call sub_cefbh		;d55b
 	push hl			;d55e
@@ -4182,7 +3358,7 @@ b139_start:
 ld561h:
 	push hl			;d561
 ld562h:
-	ld hl,b137_end		;d562
+	ld hl,str_d543		;d562
 	call sub_c341h		;d565
 	call sub_ca3bh		;d568
 	jp nc,lcb6bh		;d56b
@@ -4193,7 +3369,7 @@ ld562h:
 	or a			;d579
 	jr nz,ld562h		;d57a
 ld57ch:
-	call sub_feech		;d57c
+	call lfeech		;d57c
 	call 0bd9ah		;d57f
 	pop hl			;d582
 	ret			;d583
@@ -4203,17 +3379,10 @@ ld57ch:
 	call sub_dd3fh		;d589
 	call sub_cefbh		;d58c
 	call expect_char_inline		;d58f
-b139_end:
 
-; BLOCK 'b140' (start 0xd592 end 0xd593)
-b140_start:
-	defb 029h		;d592
-b140_end:
-
-; BLOCK 'b141' (start 0xd593 end 0xd65b)
-b141_start:
+	defb 029h		; d592  ; inline char ')'
 	push hl			;d593
-	call sub_feech		;d594
+	call lfeech		;d594
 	call 0bd70h		;d597
 	jr nz,ld5a1h		;d59a
 	call 0bda0h		;d59c
@@ -4300,10 +3469,13 @@ ld60dh:
 	jr nz,ld60dh		;d610
 	pop hl			;d612
 	ret			;d613
+ld614h:
 	ld e,003h		;d614
 	jr ld61eh		;d616
+ld618h:
 	ld e,002h		;d618
 	jr ld61eh		;d61a
+ld61ch:
 	ld e,005h		;d61c
 ld61eh:
 	ld a,(hl)			;d61e
@@ -4337,18 +3509,12 @@ ld64ch:
 ld64fh:
 	cp 0f8h		;d64f
 	jp z,lf1a0h		;d651
+ld654h:
 	call sub_d686h		;d654
 	push de			;d657
 	call expect_char_inline		;d658
-b141_end:
 
-; BLOCK 'b142' (start 0xd65b end 0xd65c)
-b142_start:
-	defb 0efh		;d65b
-b142_end:
-
-; BLOCK 'b143' (start 0xd65c end 0xdafb)
-b143_start:
+	defb 0efh		; d65b
 	call sub_cefbh		;d65c
 	ld a,b			;d65f
 	ex (sp),hl			;d660
@@ -4956,6 +4122,7 @@ ld9a3h:
 	add hl,de			;d9bc
 	pop de			;d9bd
 	jr ld9a3h		;d9be
+ld9c0h:
 	call sub_e989h		;d9c0
 ld9c3h:
 	call sub_d9cch		;d9c3
@@ -5173,19 +4340,13 @@ sub_dae7h:
 	pop de			;daf5
 	pop bc			;daf6
 	ret			;daf7
+ldaf8h:
 	call expect_char_inline		;daf8
-b143_end:
 
-; BLOCK 'b144' (start 0xdafb end 0xdafc)
-b144_start:
-	defb 0a3h		;dafb
-b144_end:
-
-; BLOCK 'b145' (start 0xdafc end 0xdb77)
-b145_start:
+	defb 0a3h		; dafb
 	call sub_c1cbh		;dafc
 	push af			;daff
-	call b146_end		;db00
+	call sub_db89h		;db00
 	call sub_d686h		;db03
 	call lff3ch		;db06
 	push hl			;db09
@@ -5205,6 +4366,7 @@ sub_db1ah:
 	call sub_dbadh		;db24
 	pop af			;db27
 	jp lc1a2h		;db28
+ldb2bh:
 	call sub_c1cbh		;db2b
 	push af			;db2e
 	call sub_db47h		;db2f
@@ -5222,12 +4384,12 @@ ldb33h:
 	jp sub_c1afh		;db44
 sub_db47h:
 	call sub_c1c0h		;db47
-	jr nc,b146_end		;db4a
+	jr nc,sub_db89h		;db4a
 	call lc1a2h		;db4c
 	push af			;db4f
 ldb50h:
 	push hl			;db50
-	call b146_end		;db51
+	call sub_db89h		;db51
 	ld a,03fh		;db54
 	call nc,sub_c356h		;db56
 	ld a,020h		;db59
@@ -5238,7 +4400,7 @@ ldb50h:
 	pop hl			;db63
 	call sub_dbd3h		;db64
 	jr c,ldb72h		;db67
-	ld hl,b145_end		;db69
+	ld hl,str_db77		;db69
 	call sub_c341h		;db6c
 	pop hl			;db6f
 	jr ldb50h		;db70
@@ -5246,32 +4408,10 @@ ldb72h:
 	pop af			;db72
 	pop af			;db73
 	jp lc1a2h		;db74
-b145_end:
 
-; BLOCK 'b146' (start 0xdb77 end 0xdb89)
-b146_start:
-	defb 03fh		;db77
-	defb 052h		;db78
-	defb 065h		;db79
-	defb 064h		;db7a
-	defb 06fh		;db7b
-	defb 020h		;db7c
-	defb 066h		;db7d
-	defb 072h		;db7e
-	defb 06fh		;db7f
-	defb 06dh		;db80
-	defb 020h		;db81
-	defb 073h		;db82
-	defb 074h		;db83
-	defb 061h		;db84
-	defb 072h		;db85
-	defb 074h		;db86
-	defb 00ah		;db87
-	defb 000h		;db88
-b146_end:
-
-; BLOCK 'b147' (start 0xdb89 end 0xdbaa)
-b147_start:
+str_db77:
+	defb "?Redo from start",00ah,000h		; db77
+sub_db89h:
 	ld a,(hl)			;db89
 	cp 03bh		;db8a
 	ld (0ae2dh),a		;db8c
@@ -5287,15 +4427,8 @@ b147_start:
 	call sub_dd55h		;dba3
 	ret c			;dba6
 	call expect_char_inline		;dba7
-b147_end:
 
-; BLOCK 'b148' (start 0xdbaa end 0xdbab)
-b148_start:
-	defb 03bh		;dbaa
-b148_end:
-
-; BLOCK 'b149' (start 0xdbab end 0xde01)
-b149_start:
+	defb 03bh		; dbaa  ; inline char ';'
 	or a			;dbab
 	ret			;dbac
 sub_dbadh:
@@ -5487,6 +4620,7 @@ sub_dcd0h:
 	ret z			;dcd5
 	cp 00ah		;dcd6
 	ret			;dcd8
+ldcd9h:
 	jr z,ldce5h		;dcd9
 	call sub_cee1h		;dcdb
 	push hl			;dcde
@@ -5497,6 +4631,7 @@ ldce5h:
 	push hl			;dce5
 	ld hl,(0ae81h)		;dce6
 	jr ldd12h		;dce9
+ldcebh:
 	push hl			;dceb
 	ld hl,(0ae30h)		;dcec
 ldcefh:
@@ -5662,6 +4797,7 @@ sub_ddd9h:
 	ld l,a			;dddf
 	scf			;dde0
 	ret			;dde1
+ldde2h:
 	ld a,0ffh		;dde2
 	jr ldde7h		;dde4
 sub_dde6h:
@@ -5682,107 +4818,103 @@ sub_ddebh:
 	pop hl			;ddfb
 	ld a,05dh		;ddfc
 	jp sub_c356h		;ddfe
-b149_end:
 
-; BLOCK 'b150' (start 0xde01 end 0xdebb)
-b150_start:
-	defw 0c971h		;de01
-	defw 0c0dfh		;de03
-	defw 0c221h		;de05
-	defw 0f1bah		;de07
-	defw 0d246h		;de09
-	defw 0ea3ch		;de0b
-	defw 0c132h		;de0d
-	defw 0c4b5h		;de0f
-	defw 0d298h		;de11
-	defw 0d2a1h		;de13
-	defw 0c25ah		;de15
-	defw 0cbc0h		;de17
-	defw 0e8efh		;de19
-	defw 0d117h		;de1b
-	defw 0d618h		;de1d
-	defw 0d61ch		;de1f
-	defw 0d614h		;de21
-	defw 0d4e7h		;de23
-	defw 0e728h		;de25
-	defw 0d67dh		;de27
-	defw 0c4c6h		;de29
-	defw 0c4cbh		;de2b
-	defw 0c052h		;de2d
-	defw 0e8f3h		;de2f
-	defw 0cb65h		;de31
-	defw 0d385h		;de33
-	defw 0d34eh		;de35
-	defw 0d9c0h		;de37
-	defw 0ca8fh		;de39
-	defw 0c979h		;de3b
-	defw 0c529h		;de3d
-	defw 0c6edh		;de3f
-	defw 0c6e8h		;de41
-	defw 0c6c7h		;de43
-	defw 0c22ah		;de45
-	defw 0db2bh		;de47
-	defw 0d439h		;de49
-	defw 0d654h		;de4b
-	defw 0daf8h		;de4d
-	defw 0e0f7h		;de4f
-	defw 0e9f6h		;de51
-	defw 0c2d2h		;de53
-	defw 0f4efh		;de55
-	defw 0eaa6h		;de57
-	defw 0f993h		;de59
-	defw 0c24fh		;de5b
-	defw 0c505h		;de5d
-	defw 0c50ah		;de5f
-	defw 0c5fbh		;de61
-	defw 0c12bh		;de63
-	defw 0c7e3h		;de65
-	defw 0c8cbh		;de67
-	defw 0cbf8h		;de69
-	defw 0c940h		;de6b
-	defw 0d25fh		;de6d
-	defw 0d256h		;de6f
-	defw 0c48ch		;de71
-	defw 0f177h		;de73
-	defw 0c20ah		;de75
-	defw 0c212h		;de77
-	defw 0c4d0h		;de79
-	defw 0c4d5h		;de7b
-	defw 0f15fh		;de7d
-	defw 0f1fdh		;de7f
-	defw 0e8f3h		;de81
-	defw 0d4ebh		;de83
-	defw 0d559h		;de85
-	defw 0dcebh		;de87
-	defw 0d31eh		;de89
-	defw 0e8f3h		;de8b
-	defw 0e7dfh		;de8d
-	defw 0dcd9h		;de8f
-	defw 0cc03h		;de91
-	defw 0c70fh		;de93
-	defw 0e9bdh		;de95
-	defw 0ec09h		;de97
-	defw 0d2c0h		;de99
-	defw 0d494h		;de9b
-	defw 0cb5ah		;de9d
-	defw 0f69dh		;de9f
-	defw 0c319h		;dea1
-	defw 0c320h		;dea3
-	defw 0dde6h		;dea5
-	defw 0dde2h		;dea7
-	defw 0f17dh		;dea9
-	defw 0c776h		;deab
-	defw 0c747h		;dead
-	defw 0c3e3h		;deaf
-	defw 0c2e1h		;deb1
-	defw 0f47bh		;deb3
-	defw 0f1f6h		;deb5
-	defw 0c8e1h		;deb7
-	defw 0c8e7h		;deb9
-b150_end:
-
-; BLOCK 'b151' (start 0xdebb end 0xdf30)
-b151_start:
+stmt_dispatch_table:
+; ---- BASIC statement dispatch table: entry n handles token &80+n ----
+	defw lc971h		; de01  &80 AFTER
+	defw lc0dfh		; de03  &81 AUTO
+	defw lc221h		; de05  &82 BORDER
+	defw lf1bah		; de07  &83 CALL
+	defw ld246h		; de09  &84 CAT
+	defw lea3ch		; de0b  &85 CHAIN
+	defw lc132h		; de0d  &86 CLEAR
+	defw lc4b5h		; de0f  &87 CLG
+	defw sub_d298h		; de11  &88 CLOSEIN
+	defw sub_d2a1h		; de13  &89 CLOSEOUT
+	defw lc25ah		; de15  &8A CLS
+	defw lcbc0h		; de17  &8B CONT
+	defw sub_e8efh		; de19  &8C DATA
+	defw ld117h		; de1b  &8D DEF
+	defw ld618h		; de1d  &8E DEFINT
+	defw ld61ch		; de1f  &8F DEFREAL
+	defw ld614h		; de21  &90 DEFSTR
+	defw ld4e7h		; de23  &91 DEG
+	defw le728h		; de25  &92 DELETE
+	defw ld67dh		; de27  &93 DIM
+	defw lc4c6h		; de29  &94 DRAW
+	defw lc4cbh		; de2b  &95 DRAWR
+	defw lc052h		; de2d  &96 EDIT
+	defw le8f3h		; de2f  &97 ELSE
+	defw lcb65h		; de31  &98 END
+	defw ld385h		; de33  &99 ENT
+	defw ld34eh		; de35  &9A ENV
+	defw ld9c0h		; de37  &9B ERASE
+	defw lca8fh		; de39  &9C ERROR
+	defw lc979h		; de3b  &9D EVERY
+	defw lc529h		; de3d  &9E FOR
+	defw lc6edh		; de3f  &9F GO	SUB
+	defw lc6e8h		; de41  &A0 GO	TO
+	defw lc6c7h		; de43  &A1 IF
+	defw lc22ah		; de45  &A2 INK
+	defw ldb2bh		; de47  &A3 INPUT
+	defw ld439h		; de49  &A4 KEY
+	defw ld654h		; de4b  &A5 LET
+	defw ldaf8h		; de4d  &A6 LINE
+	defw le0f7h		; de4f  &A7 LIST
+	defw le9f6h		; de51  &A8 LOAD
+	defw lc2d2h		; de53  &A9 LOCATE
+	defw lf4efh		; de55  &AA MEMORY
+	defw leaa6h		; de57  &AB MERGE
+	defw lf993h		; de59  &AC MID$
+	defw lc24fh		; de5b  &AD MODE
+	defw lc505h		; de5d  &AE MOVE
+	defw lc50ah		; de5f  &AF MOVER
+	defw lc5fbh		; de61  &B0 NEXT
+	defw lc12bh		; de63  &B1 NEW
+	defw lc7e3h		; de65  &B2 ON
+	defw lc8cbh		; de67  &B3 ON BREAK
+	defw lcbf8h		; de69  &B4 ON ERROR GO	TO 0
+	defw lc940h		; de6b  &B5 ON SQ
+	defw ld25fh		; de6d  &B6 OPENIN
+	defw ld256h		; de6f  &B7 OPENOUT
+	defw lc48ch		; de71  &B8 ORIGIN
+	defw lf177h		; de73  &B9 OUT
+	defw lc20ah		; de75  &BA PAPER
+	defw lc212h		; de77  &BB PEN
+	defw lc4d0h		; de79  &BC PLOT
+	defw lc4d5h		; de7b  &BD PLOTR
+	defw lf15fh		; de7d  &BE POKE
+	defw lf1fdh		; de7f  &BF PRINT
+	defw le8f3h		; de81  &C0 '
+	defw ld4ebh		; de83  &C1 RAD
+	defw ld559h		; de85  &C2 RANDOMIZE
+	defw ldcebh		; de87  &C3 READ
+	defw ld31eh		; de89  &C4 RELEASE
+	defw le8f3h		; de8b  &C5 REM
+	defw le7dfh		; de8d  &C6 RENUM
+	defw ldcd9h		; de8f  &C7 RESTORE
+	defw lcc03h		; de91  &C8 RESUME
+	defw lc70fh		; de93  &C9 RETURN
+	defw le9bdh		; de95  &CA RUN
+	defw lec09h		; de97  &CB SAVE
+	defw ld2c0h		; de99  &CC SOUND
+	defw ld494h		; de9b  &CD SPEED
+	defw lcb5ah		; de9d  &CE STOP
+	defw lf69dh		; de9f  &CF SYMBOL
+	defw lc319h		; dea1  &D0 TAG
+	defw lc320h		; dea3  &D1 TAGOFF
+	defw sub_dde6h		; dea5  &D2 TROFF
+	defw ldde2h		; dea7  &D3 TRON
+	defw lf17dh		; dea9  &D4 WAIT
+	defw lc776h		; deab  &D5 WEND
+	defw lc747h		; dead  &D6 WHILE
+	defw lc3e3h		; deaf  &D7 WIDTH
+	defw lc2e1h		; deb1  &D8 WINDOW
+	defw lf47bh		; deb3  &D9 WRITE
+	defw lf1f6h		; deb5  &DA ZONE
+	defw lc8e1h		; deb7  &DB DI
+	defw lc8e7h		; deb9  &DC EI
+sub_debbh:
 	push de			;debb
 	ex de,hl			;debc
 	ld hl,(0ae7fh)		;debd
@@ -5838,10 +4970,10 @@ ldf09h:
 	cp 0c5h		;df0d
 	jp z,le0edh		;df0f
 	push hl			;df12
-	ld hl,b151_end		;df13
+	ld hl,token_list_df30		;df13
 	call sub_ffaah		;df16
 	pop hl			;df19
-	jr c,b152_end		;df1a
+	jr c,ldf35h		;df1a
 	push af			;df1c
 	cp 097h		;df1d
 	ld a,001h		;df1f
@@ -5856,19 +4988,10 @@ ldf25h:
 	ret nz			;df2a
 	ld e,017h		;df2b
 	jp raise_error		;df2d
-b151_end:
 
-; BLOCK 'b152' (start 0xdf30 end 0xdf35)
-b152_start:
-	defb 08ch		;df30
-	defb 08eh		;df31
-	defb 090h		;df32
-	defb 08fh		;df33
-	defb 000h		;df34
-b152_end:
-
-; BLOCK 'b153' (start 0xdf35 end 0xdfdc)
-b153_start:
+token_list_df30:
+	defb 08ch,08eh,090h,08fh,000h		; df30  token list, 0-terminated
+ldf35h:
 	call ldf25h		;df35
 ldf38h:
 	ld a,(hl)			;df38
@@ -5878,7 +5001,7 @@ ldf38h:
 	jr z,ldf49h		;df3d
 	inc hl			;df3f
 	cp 022h		;df40
-	jr nz,b152_end		;df42
+	jr nz,ldf35h		;df42
 	call sub_e0bfh		;df44
 	jr ldf38h		;df47
 ldf49h:
@@ -5931,7 +5054,7 @@ ldf8eh:
 	ld a,(hl)			;df8f
 	call sub_ff7bh		;df90
 	jr c,ldf8eh		;df93
-	call b154_end		;df95
+	call sub_dfeah		;df95
 	jr c,ldf9eh		;df98
 	ld a,00dh		;df9a
 	jr ldfa4h		;df9c
@@ -5966,7 +5089,7 @@ ldfc3h:
 ldfc8h:
 	push hl			;dfc8
 	ld c,a			;dfc9
-	ld hl,b153_end		;dfca
+	ld hl,token_list_dfdc		;dfca
 	call sub_ffaah		;dfcd
 	sbc a,a			;dfd0
 	and 001h		;dfd1
@@ -5977,28 +5100,11 @@ ldfc8h:
 	pop bc			;dfd9
 	or a			;dfda
 	ret			;dfdb
-b153_end:
 
-; BLOCK 'b154' (start 0xdfdc end 0xdfea)
-b154_start:
-	defb 0c7h		;dfdc
-	defb 081h		;dfdd
-	defb 0c6h		;dfde
-	defb 092h		;dfdf
-	defb 096h		;dfe0
-	defb 0c8h		;dfe1
-	defb 0e3h		;dfe2
-	defb 097h		;dfe3
-	defb 0cah		;dfe4
-	defb 0a7h		;dfe5
-	defb 0a0h		;dfe6
-	defb 0ebh		;dfe7
-	defb 09fh		;dfe8
-	defb 000h		;dfe9
-b154_end:
-
-; BLOCK 'b155' (start 0xdfea end 0xe354)
-b155_start:
+token_list_dfdc:
+	defb 0c7h,081h,0c6h,092h,096h,0c8h,0e3h,097h		; dfdc  token list, 0-terminated
+	defb 0cah,0a7h,0a0h,0ebh,09fh,000h		; dfe4
+sub_dfeah:
 	cp 026h		;dfea
 	ret nc			;dfec
 	cp 021h		;dfed
@@ -6108,7 +5214,7 @@ le080h:
 	ld b,0bfh		;e08c
 	jr z,le0a6h		;e08e
 	dec hl			;e090
-	ld de,le64bh		;e091
+	ld de,0e64bh		;e091
 	call sub_e327h		;e094
 	ld a,(de)			;e097
 	jr c,le0a2h		;e098
@@ -6178,6 +5284,7 @@ le0edh:
 	jr nz,le0edh		;e0f3
 	dec hl			;e0f5
 	ret			;e0f6
+le0f7h:
 	call sub_ceb0h		;e0f7
 	push bc			;e0fa
 	push de			;e0fb
@@ -6303,7 +5410,7 @@ sub_e196h:
 	jr c,le1deh		;e1ae
 	cp 07ch		;e1b0
 	jr z,le205h		;e1b2
-	call b154_end		;e1b4
+	call sub_dfeah		;e1b4
 	call c,sub_e21ah		;e1b7
 	ld a,(hl)			;e1ba
 	jr le1cah		;e1bb
@@ -6530,13 +5637,13 @@ sub_e2edh:
 	push bc			;e2ed
 	ld c,a			;e2ee
 	ld b,01ah		;e2ef
-	ld hl,b156_end		;e2f1
+	ld hl,keyword_lists		;e2f1
 le2f4h:
 	call sub_e313h		;e2f4
 	jr c,le306h		;e2f7
 	inc hl			;e2f9
 	djnz le2f4h		;e2fa
-	ld hl,le64bh		;e2fc
+	ld hl,0e64bh		;e2fc
 	call sub_e313h		;e2ff
 	jr nc,le30bh		;e302
 	ld b,0c0h		;e304
@@ -6606,795 +5713,269 @@ le351h:
 	pop af			;e351
 	scf			;e352
 	ret			;e353
-b155_end:
 
-; BLOCK 'b156' (start 0xe354 end 0xe388)
-b156_start:
-	defw 0e635h		;e354
-	defw 0e62ah		;e356
-	defw 0e5efh		;e358
-	defw 0e5b9h		;e35a
-	defw 0e58ah		;e35c
-	defw 0e57eh		;e35e
-	defw 0e572h		;e360
-	defw 0e568h		;e362
-	defw 0e547h		;e364
-	defw 0e543h		;e366
-	defw 0e53fh		;e368
-	defw 0e513h		;e36a
-	defw 0e4edh		;e36c
-	defw 0e4e2h		;e36e
-	defw 0e4aah		;e370
-	defw 0e486h		;e372
-	defw 0e485h		;e374
-	defw 0e43bh		;e376
-	defw 0e3fbh		;e378
-	defw 0e3cfh		;e37a
-	defw 0e3c0h		;e37c
-	defw 0e3b8h		;e37e
-	defw 0e39ah		;e380
-	defw 0e392h		;e382
-	defw 0e38dh		;e384
-	defw 0e388h		;e386
-b156_end:
+kw_letter_table:
+; ---- keyword list pointers: entry n -> list of keywords starting with letter A+n ----
+	defw kw_list_A		; e354  'A'
+	defw kw_list_B		; e356  'B'
+	defw kw_list_C		; e358  'C'
+	defw kw_list_D		; e35a  'D'
+	defw kw_list_E		; e35c  'E'
+	defw kw_list_F		; e35e  'F'
+	defw kw_list_G		; e360  'G'
+	defw kw_list_H		; e362  'H'
+	defw kw_list_I		; e364  'I'
+	defw kw_list_J		; e366  'J'
+	defw kw_list_K		; e368  'K'
+	defw kw_list_L		; e36a  'L'
+	defw kw_list_M		; e36c  'M'
+	defw kw_list_N		; e36e  'N'
+	defw kw_list_O		; e370  'O'
+	defw kw_list_P		; e372  'P'
+	defw kw_list_Q		; e374  'Q'
+	defw kw_list_R		; e376  'R'
+	defw kw_list_S		; e378  'S'
+	defw kw_list_T		; e37a  'T'
+	defw kw_list_U		; e37c  'U'
+	defw kw_list_V		; e37e  'V'
+	defw kw_list_W		; e380  'W'
+	defw kw_list_X		; e382  'X'
+	defw kw_list_Y		; e384  'Y'
+	defw kw_list_Z		; e386  'Z'
 
-; BLOCK 'b157' (start 0xe388 end 0xe676)
-b157_start:
-	defb 04fh		;e388
-	defb 04eh		;e389
-	defb 0c5h		;e38a
-	defb 0dah		;e38b
-	defb 000h		;e38c
-	defb 050h		;e38d
-	defb 04fh		;e38e
-	defb 0d3h		;e38f
-	defb 048h		;e390
-	defb 000h		;e391
-	defb 050h		;e392
-	defb 04fh		;e393
-	defb 0d3h		;e394
-	defb 047h		;e395
-	defb 04fh		;e396
-	defb 0d2h		;e397
-	defb 0fdh		;e398
-	defb 000h		;e399
-	defb 052h		;e39a
-	defb 049h		;e39b
-	defb 054h		;e39c
-	defb 0c5h		;e39d
-	defb 0d9h		;e39e
-	defb 049h		;e39f
-	defb 04eh		;e3a0
-	defb 044h		;e3a1
-	defb 04fh		;e3a2
-	defb 0d7h		;e3a3
-	defb 0d8h		;e3a4
-	defb 049h		;e3a5
-	defb 044h		;e3a6
-	defb 054h		;e3a7
-	defb 0c8h		;e3a8
-	defb 0d7h		;e3a9
-	defb 048h		;e3aa
-	defb 049h		;e3ab
-	defb 04ch		;e3ac
-	defb 0c5h		;e3ad
-	defb 0d6h		;e3ae
-	defb 045h		;e3af
-	defb 04eh		;e3b0
-	defb 0c4h		;e3b1
-	defb 0d5h		;e3b2
-	defb 041h		;e3b3
-	defb 049h		;e3b4
-	defb 0d4h		;e3b5
-	defb 0d4h		;e3b6
-	defb 000h		;e3b7
-	defb 050h		;e3b8
-	defb 04fh		;e3b9
-	defb 0d3h		;e3ba
-	defb 07fh		;e3bb
-	defb 041h		;e3bc
-	defb 0cch		;e3bd
-	defb 01dh		;e3be
-	defb 000h		;e3bf
-	defb 053h		;e3c0
-	defb 049h		;e3c1
-	defb 04eh		;e3c2
-	defb 0c7h		;e3c3
-	defb 0edh		;e3c4
-	defb 050h		;e3c5
-	defb 050h		;e3c6
-	defb 045h		;e3c7
-	defb 052h		;e3c8
-	defb 0a4h		;e3c9
-	defb 01ch		;e3ca
-	defb 04eh		;e3cb
-	defb 0d4h		;e3cc
-	defb 01bh		;e3cd
-	defb 000h		;e3ce
-	defb 052h		;e3cf
-	defb 04fh		;e3d0
-	defb 0ceh		;e3d1
-	defb 0d3h		;e3d2
-	defb 052h		;e3d3
-	defb 04fh		;e3d4
-	defb 046h		;e3d5
-	defb 0c6h		;e3d6
-	defb 0d2h		;e3d7
-	defb 0cfh		;e3d8
-	defb 0ech		;e3d9
-	defb 049h		;e3da
-	defb 04dh		;e3db
-	defb 0c5h		;e3dc
-	defb 046h		;e3dd
-	defb 048h		;e3de
-	defb 045h		;e3df
-	defb 0ceh		;e3e0
-	defb 0ebh		;e3e1
-	defb 045h		;e3e2
-	defb 053h		;e3e3
-	defb 054h		;e3e4
-	defb 0d2h		;e3e5
-	defb 07dh		;e3e6
-	defb 045h		;e3e7
-	defb 053h		;e3e8
-	defb 0d4h		;e3e9
-	defb 07ch		;e3ea
-	defb 041h		;e3eb
-	defb 0ceh		;e3ec
-	defb 01ah		;e3ed
-	defb 041h		;e3ee
-	defb 047h		;e3ef
-	defb 04fh		;e3f0
-	defb 046h		;e3f1
-	defb 0c6h		;e3f2
-	defb 0d1h		;e3f3
-	defb 041h		;e3f4
-	defb 0c7h		;e3f5
-	defb 0d0h		;e3f6
-	defb 041h		;e3f7
-	defb 0c2h		;e3f8
-	defb 0eah		;e3f9
-	defb 000h		;e3fa
-	defb 059h		;e3fb
-	defb 04dh		;e3fc
-	defb 042h		;e3fd
-	defb 04fh		;e3fe
-	defb 0cch		;e3ff
-	defb 0cfh		;e400
-	defb 057h		;e401
-	defb 041h		;e402
-	defb 0d0h		;e403
-	defb 0e7h		;e404
-	defb 054h		;e405
-	defb 052h		;e406
-	defb 049h		;e407
-	defb 04eh		;e408
-	defb 047h		;e409
-	defb 0a4h		;e40a
-	defb 07bh		;e40b
-	defb 054h		;e40c
-	defb 052h		;e40d
-	defb 0a4h		;e40e
-	defb 019h		;e40f
-	defb 054h		;e410
-	defb 04fh		;e411
-	defb 0d0h		;e412
-	defb 0ceh		;e413
-	defb 054h		;e414
-	defb 045h		;e415
-	defb 0d0h		;e416
-	defb 0e6h		;e417
-	defb 051h		;e418
-	defb 0d2h		;e419
-	defb 018h		;e41a
-	defb 0d1h		;e41b
-	defb 017h		;e41c
-	defb 050h		;e41d
-	defb 045h		;e41e
-	defb 045h		;e41f
-	defb 0c4h		;e420
-	defb 0cdh		;e421
-	defb 050h		;e422
-	defb 0c3h		;e423
-	defb 0e5h		;e424
-	defb 050h		;e425
-	defb 041h		;e426
-	defb 043h		;e427
-	defb 045h		;e428
-	defb 0a4h		;e429
-	defb 016h		;e42a
-	defb 04fh		;e42b
-	defb 055h		;e42c
-	defb 04eh		;e42d
-	defb 0c4h		;e42e
-	defb 0cch		;e42f
-	defb 049h		;e430
-	defb 0ceh		;e431
-	defb 015h		;e432
-	defb 047h		;e433
-	defb 0ceh		;e434
-	defb 014h		;e435
-	defb 041h		;e436
-	defb 056h		;e437
-	defb 0c5h		;e438
-	defb 0cbh		;e439
-	defb 000h		;e43a
-	defb 055h		;e43b
-	defb 0ceh		;e43c
-	defb 0cah		;e43d
-	defb 04fh		;e43e
-	defb 055h		;e43f
-	defb 04eh		;e440
-	defb 0c4h		;e441
-	defb 07ah		;e442
-	defb 04eh		;e443
-	defb 0c4h		;e444
-	defb 045h		;e445
-	defb 049h		;e446
-	defb 047h		;e447
-	defb 048h		;e448
-	defb 054h		;e449
-	defb 0a4h		;e44a
-	defb 079h		;e44b
-	defb 045h		;e44c
-	defb 054h		;e44d
-	defb 055h		;e44e
-	defb 052h		;e44f
-	defb 0ceh		;e450
-	defb 0c9h		;e451
-	defb 045h		;e452
-	defb 053h		;e453
-	defb 055h		;e454
-	defb 04dh		;e455
-	defb 0c5h		;e456
-	defb 0c8h		;e457
-	defb 045h		;e458
-	defb 053h		;e459
-	defb 054h		;e45a
-	defb 04fh		;e45b
-	defb 052h		;e45c
-	defb 0c5h		;e45d
-	defb 0c7h		;e45e
-	defb 045h		;e45f
-	defb 04eh		;e460
-	defb 055h		;e461
-	defb 0cdh		;e462
-	defb 0c6h		;e463
-	defb 045h		;e464
-	defb 04dh		;e465
-	defb 041h		;e466
-	defb 049h		;e467
-	defb 0ceh		;e468
-	defb 013h		;e469
-	defb 045h		;e46a
-	defb 0cdh		;e46b
-	defb 0c5h		;e46c
-	defb 045h		;e46d
-	defb 04ch		;e46e
-	defb 045h		;e46f
-	defb 041h		;e470
-	defb 053h		;e471
-	defb 0c5h		;e472
-	defb 0c4h		;e473
-	defb 045h		;e474
-	defb 041h		;e475
-	defb 0c4h		;e476
-	defb 0c3h		;e477
-	defb 041h		;e478
-	defb 04eh		;e479
-	defb 044h		;e47a
-	defb 04fh		;e47b
-	defb 04dh		;e47c
-	defb 049h		;e47d
-	defb 05ah		;e47e
-	defb 0c5h		;e47f
-	defb 0c2h		;e480
-	defb 041h		;e481
-	defb 0c4h		;e482
-	defb 0c1h		;e483
-	defb 000h		;e484
-	defb 000h		;e485
-	defb 052h		;e486
-	defb 049h		;e487
-	defb 04eh		;e488
-	defb 0d4h		;e489
-	defb 0bfh		;e48a
-	defb 04fh		;e48b
-	defb 0d3h		;e48c
-	defb 078h		;e48d
-	defb 04fh		;e48e
-	defb 04bh		;e48f
-	defb 0c5h		;e490
-	defb 0beh		;e491
-	defb 04ch		;e492
-	defb 04fh		;e493
-	defb 054h		;e494
-	defb 0d2h		;e495
-	defb 0bdh		;e496
-	defb 04ch		;e497
-	defb 04fh		;e498
-	defb 0d4h		;e499
-	defb 0bch		;e49a
-	defb 0c9h		;e49b
-	defb 044h		;e49c
-	defb 045h		;e49d
-	defb 0ceh		;e49e
-	defb 0bbh		;e49f
-	defb 045h		;e4a0
-	defb 045h		;e4a1
-	defb 0cbh		;e4a2
-	defb 012h		;e4a3
-	defb 041h		;e4a4
-	defb 050h		;e4a5
-	defb 045h		;e4a6
-	defb 0d2h		;e4a7
-	defb 0bah		;e4a8
-	defb 000h		;e4a9
-	defb 055h		;e4aa
-	defb 0d4h		;e4ab
-	defb 0b9h		;e4ac
-	defb 052h		;e4ad
-	defb 049h		;e4ae
-	defb 047h		;e4af
-	defb 049h		;e4b0
-	defb 0ceh		;e4b1
-	defb 0b8h		;e4b2
-	defb 0d2h		;e4b3
-	defb 0fch		;e4b4
-	defb 050h		;e4b5
-	defb 045h		;e4b6
-	defb 04eh		;e4b7
-	defb 04fh		;e4b8
-	defb 055h		;e4b9
-	defb 0d4h		;e4ba
-	defb 0b7h		;e4bb
-	defb 050h		;e4bc
-	defb 045h		;e4bd
-	defb 04eh		;e4be
-	defb 049h		;e4bf
-	defb 0ceh		;e4c0
-	defb 0b6h		;e4c1
-	defb 04eh		;e4c2
-	defb 020h		;e4c3
-	defb 053h		;e4c4
-	defb 0d1h		;e4c5
-	defb 0b5h		;e4c6
-	defb 04eh		;e4c7
-	defb 020h		;e4c8
-	defb 045h		;e4c9
-	defb 052h		;e4ca
-	defb 052h		;e4cb
-	defb 04fh		;e4cc
-	defb 052h		;e4cd
-	defb 020h		;e4ce
-	defb 047h		;e4cf
-	defb 04fh		;e4d0
-	defb 009h		;e4d1
-	defb 054h		;e4d2
-	defb 04fh		;e4d3
-	defb 020h		;e4d4
-	defb 0b0h		;e4d5
-	defb 0b4h		;e4d6
-	defb 04eh		;e4d7
-	defb 020h		;e4d8
-	defb 042h		;e4d9
-	defb 052h		;e4da
-	defb 045h		;e4db
-	defb 041h		;e4dc
-	defb 0cbh		;e4dd
-	defb 0b3h		;e4de
-	defb 0ceh		;e4df
-	defb 0b2h		;e4e0
-	defb 000h		;e4e1
-	defb 04fh		;e4e2
-	defb 0d4h		;e4e3
-	defb 0feh		;e4e4
-	defb 045h		;e4e5
-	defb 0d7h		;e4e6
-	defb 0b1h		;e4e7
-	defb 045h		;e4e8
-	defb 058h		;e4e9
-	defb 0d4h		;e4ea
-	defb 0b0h		;e4eb
-	defb 000h		;e4ec
-	defb 04fh		;e4ed
-	defb 056h		;e4ee
-	defb 045h		;e4ef
-	defb 0d2h		;e4f0
-	defb 0afh		;e4f1
-	defb 04fh		;e4f2
-	defb 056h		;e4f3
-	defb 0c5h		;e4f4
-	defb 0aeh		;e4f5
-	defb 04fh		;e4f6
-	defb 044h		;e4f7
-	defb 0c5h		;e4f8
-	defb 0adh		;e4f9
-	defb 04fh		;e4fa
-	defb 0c4h		;e4fb
-	defb 0fbh		;e4fc
-	defb 049h		;e4fd
-	defb 0ceh		;e4fe
-	defb 077h		;e4ff
-	defb 049h		;e500
-	defb 044h		;e501
-	defb 0a4h		;e502
-	defb 0ach		;e503
-	defb 045h		;e504
-	defb 052h		;e505
-	defb 047h		;e506
-	defb 0c5h		;e507
-	defb 0abh		;e508
-	defb 045h		;e509
-	defb 04dh		;e50a
-	defb 04fh		;e50b
-	defb 052h		;e50c
-	defb 0d9h		;e50d
-	defb 0aah		;e50e
-	defb 041h		;e50f
-	defb 0d8h		;e510
-	defb 076h		;e511
-	defb 000h		;e512
-	defb 04fh		;e513
-	defb 057h		;e514
-	defb 045h		;e515
-	defb 052h		;e516
-	defb 0a4h		;e517
-	defb 011h		;e518
-	defb 04fh		;e519
-	defb 047h		;e51a
-	defb 031h		;e51b
-	defb 0b0h		;e51c
-	defb 010h		;e51d
-	defb 04fh		;e51e
-	defb 0c7h		;e51f
-	defb 00fh		;e520
-	defb 04fh		;e521
-	defb 043h		;e522
-	defb 041h		;e523
-	defb 054h		;e524
-	defb 0c5h		;e525
-	defb 0a9h		;e526
-	defb 04fh		;e527
-	defb 041h		;e528
-	defb 0c4h		;e529
-	defb 0a8h		;e52a
-	defb 049h		;e52b
-	defb 053h		;e52c
-	defb 0d4h		;e52d
-	defb 0a7h		;e52e
-	defb 049h		;e52f
-	defb 04eh		;e530
-	defb 0c5h		;e531
-	defb 0a6h		;e532
-	defb 045h		;e533
-	defb 0d4h		;e534
-	defb 0a5h		;e535
-	defb 045h		;e536
-	defb 0ceh		;e537
-	defb 00eh		;e538
-	defb 045h		;e539
-	defb 046h		;e53a
-	defb 054h		;e53b
-	defb 0a4h		;e53c
-	defb 075h		;e53d
-	defb 000h		;e53e
-	defb 045h		;e53f
-	defb 0d9h		;e540
-	defb 0a4h		;e541
-	defb 000h		;e542
-	defb 04fh		;e543
-	defb 0d9h		;e544
-	defb 00dh		;e545
-	defb 000h		;e546
-	defb 04eh		;e547
-	defb 0d4h		;e548
-	defb 00ch		;e549
-	defb 04eh		;e54a
-	defb 053h		;e54b
-	defb 054h		;e54c
-	defb 0d2h		;e54d
-	defb 074h		;e54e
-	defb 04eh		;e54f
-	defb 050h		;e550
-	defb 055h		;e551
-	defb 0d4h		;e552
-	defb 0a3h		;e553
-	defb 04eh		;e554
-	defb 0d0h		;e555
-	defb 00bh		;e556
-	defb 04eh		;e557
-	defb 04bh		;e558
-	defb 045h		;e559
-	defb 059h		;e55a
-	defb 0a4h		;e55b
-	defb 043h		;e55c
-	defb 04eh		;e55d
-	defb 04bh		;e55e
-	defb 045h		;e55f
-	defb 0d9h		;e560
-	defb 00ah		;e561
-	defb 04eh		;e562
-	defb 0cbh		;e563
-	defb 0a2h		;e564
-	defb 0c6h		;e565
-	defb 0a1h		;e566
-	defb 000h		;e567
-	defb 049h		;e568
-	defb 04dh		;e569
-	defb 045h		;e56a
-	defb 0cdh		;e56b
-	defb 042h		;e56c
-	defb 045h		;e56d
-	defb 058h		;e56e
-	defb 0a4h		;e56f
-	defb 073h		;e570
-	defb 000h		;e571
-	defb 04fh		;e572
-	defb 009h		;e573
-	defb 054h		;e574
-	defb 0cfh		;e575
-	defb 0a0h		;e576
-	defb 04fh		;e577
-	defb 009h		;e578
-	defb 053h		;e579
-	defb 055h		;e57a
-	defb 0c2h		;e57b
-	defb 09fh		;e57c
-	defb 000h		;e57d
-	defb 052h		;e57e
-	defb 0c5h		;e57f
-	defb 009h		;e580
-	defb 04fh		;e581
-	defb 0d2h		;e582
-	defb 09eh		;e583
-	defb 0ceh		;e584
-	defb 0e4h		;e585
-	defb 049h		;e586
-	defb 0d8h		;e587
-	defb 008h		;e588
-	defb 000h		;e589
-	defb 058h		;e58a
-	defb 0d0h		;e58b
-	defb 007h		;e58c
-	defb 056h		;e58d
-	defb 045h		;e58e
-	defb 052h		;e58f
-	defb 0d9h		;e590
-	defb 09dh		;e591
-	defb 052h		;e592
-	defb 052h		;e593
-	defb 04fh		;e594
-	defb 0d2h		;e595
-	defb 09ch		;e596
-	defb 052h		;e597
-	defb 0d2h		;e598
-	defb 041h		;e599
-	defb 052h		;e59a
-	defb 0cch		;e59b
-	defb 0e3h		;e59c
-	defb 052h		;e59d
-	defb 041h		;e59e
-	defb 053h		;e59f
-	defb 0c5h		;e5a0
-	defb 09bh		;e5a1
-	defb 04fh		;e5a2
-	defb 0c6h		;e5a3
-	defb 040h		;e5a4
-	defb 04eh		;e5a5
-	defb 0d6h		;e5a6
-	defb 09ah		;e5a7
-	defb 04eh		;e5a8
-	defb 0d4h		;e5a9
-	defb 099h		;e5aa
-	defb 04eh		;e5ab
-	defb 0c4h		;e5ac
-	defb 098h		;e5ad
-	defb 04ch		;e5ae
-	defb 053h		;e5af
-	defb 0c5h		;e5b0
-	defb 097h		;e5b1
-	defb 0c9h		;e5b2
-	defb 0dch		;e5b3
-	defb 044h		;e5b4
-	defb 049h		;e5b5
-	defb 0d4h		;e5b6
-	defb 096h		;e5b7
-	defb 000h		;e5b8
-	defb 052h		;e5b9
-	defb 041h		;e5ba
-	defb 057h		;e5bb
-	defb 0d2h		;e5bc
-	defb 095h		;e5bd
-	defb 052h		;e5be
-	defb 041h		;e5bf
-	defb 0d7h		;e5c0
-	defb 094h		;e5c1
-	defb 049h		;e5c2
-	defb 0cdh		;e5c3
-	defb 093h		;e5c4
-	defb 0c9h		;e5c5
-	defb 0dbh		;e5c6
-	defb 045h		;e5c7
-	defb 04ch		;e5c8
-	defb 045h		;e5c9
-	defb 054h		;e5ca
-	defb 0c5h		;e5cb
-	defb 092h		;e5cc
-	defb 045h		;e5cd
-	defb 0c7h		;e5ce
-	defb 091h		;e5cf
-	defb 045h		;e5d0
-	defb 046h		;e5d1
-	defb 053h		;e5d2
-	defb 054h		;e5d3
-	defb 0d2h		;e5d4
-	defb 090h		;e5d5
-	defb 045h		;e5d6
-	defb 046h		;e5d7
-	defb 052h		;e5d8
-	defb 045h		;e5d9
-	defb 041h		;e5da
-	defb 0cch		;e5db
-	defb 08fh		;e5dc
-	defb 045h		;e5dd
-	defb 046h		;e5de
-	defb 049h		;e5df
-	defb 04eh		;e5e0
-	defb 0d4h		;e5e1
-	defb 08eh		;e5e2
-	defb 045h		;e5e3
-	defb 0c6h		;e5e4
-	defb 08dh		;e5e5
-	defb 045h		;e5e6
-	defb 043h		;e5e7
-	defb 0a4h		;e5e8
-	defb 072h		;e5e9
-	defb 041h		;e5ea
-	defb 054h		;e5eb
-	defb 0c1h		;e5ec
-	defb 08ch		;e5ed
-	defb 000h		;e5ee
-	defb 052h		;e5ef
-	defb 045h		;e5f0
-	defb 041h		;e5f1
-	defb 0cch		;e5f2
-	defb 006h		;e5f3
-	defb 04fh		;e5f4
-	defb 0d3h		;e5f5
-	defb 005h		;e5f6
-	defb 04fh		;e5f7
-	defb 04eh		;e5f8
-	defb 0d4h		;e5f9
-	defb 08bh		;e5fa
-	defb 04ch		;e5fb
-	defb 0d3h		;e5fc
-	defb 08ah		;e5fd
-	defb 04ch		;e5fe
-	defb 04fh		;e5ff
-	defb 053h		;e600
-	defb 045h		;e601
-	defb 04fh		;e602
-	defb 055h		;e603
-	defb 0d4h		;e604
-	defb 089h		;e605
-	defb 04ch		;e606
-	defb 04fh		;e607
-	defb 053h		;e608
-	defb 045h		;e609
-	defb 049h		;e60a
-	defb 0ceh		;e60b
-	defb 088h		;e60c
-	defb 04ch		;e60d
-	defb 0c7h		;e60e
-	defb 087h		;e60f
-	defb 04ch		;e610
-	defb 045h		;e611
-	defb 041h		;e612
-	defb 0d2h		;e613
-	defb 086h		;e614
-	defb 049h		;e615
-	defb 04eh		;e616
-	defb 0d4h		;e617
-	defb 004h		;e618
-	defb 048h		;e619
-	defb 052h		;e61a
-	defb 0a4h		;e61b
-	defb 003h		;e61c
-	defb 048h		;e61d
-	defb 041h		;e61e
-	defb 049h		;e61f
-	defb 0ceh		;e620
-	defb 085h		;e621
-	defb 041h		;e622
-	defb 0d4h		;e623
-	defb 084h		;e624
-	defb 041h		;e625
-	defb 04ch		;e626
-	defb 0cch		;e627
-	defb 083h		;e628
-	defb 000h		;e629
-	defb 04fh		;e62a
-	defb 052h		;e62b
-	defb 044h		;e62c
-	defb 045h		;e62d
-	defb 0d2h		;e62e
-	defb 082h		;e62f
-	defb 049h		;e630
-	defb 04eh		;e631
-	defb 0a4h		;e632
-	defb 071h		;e633
-	defb 000h		;e634
-	defb 055h		;e635
-	defb 054h		;e636
-	defb 0cfh		;e637
-	defb 081h		;e638
-	defb 054h		;e639
-	defb 0ceh		;e63a
-	defb 002h		;e63b
-	defb 053h		;e63c
-	defb 0c3h		;e63d
-	defb 001h		;e63e
-	defb 04eh		;e63f
-	defb 0c4h		;e640
-	defb 0fah		;e641
-	defb 046h		;e642
-	defb 054h		;e643
-	defb 045h		;e644
-	defb 0d2h		;e645
-	defb 080h		;e646
-	defb 042h		;e647
-	defb 0d3h		;e648
-	defb 000h		;e649
-	defb 000h		;e64a
-le64bh:
-	defb 0deh		;e64b
-	defb 0f8h		;e64c
-	defb 0dch		;e64d
-	defb 0f9h		;e64e
-	defb 03eh		;e64f
-	defb 009h		;e650
-	defb 0bdh		;e651
-	defb 0f0h		;e652
-	defb 03dh		;e653
-	defb 020h		;e654
-	defb 0beh		;e655
-	defb 0f0h		;e656
-	defb 0beh		;e657
-	defb 0eeh		;e658
-	defb 0bdh		;e659
-	defb 0efh		;e65a
-	defb 03ch		;e65b
-	defb 009h		;e65c
-	defb 0beh		;e65d
-	defb 0f2h		;e65e
-	defb 03ch		;e65f
-	defb 009h		;e660
-	defb 0bdh		;e661
-	defb 0f3h		;e662
-	defb 03dh		;e663
-	defb 020h		;e664
-	defb 0bch		;e665
-	defb 0f3h		;e666
-	defb 0bch		;e667
-	defb 0f1h		;e668
-	defb 0afh		;e669
-	defb 0f7h		;e66a
-	defb 0bah		;e66b
-	defb 001h		;e66c
-	defb 0aah		;e66d
-	defb 0f6h		;e66e
-	defb 0adh		;e66f
-	defb 0f5h		;e670
-	defb 0abh		;e671
-	defb 0f4h		;e672
-	defb 0a7h		;e673
-	defb 0c0h		;e674
-	defb 000h		;e675
-b157_end:
-
-; BLOCK 'b158' (start 0xe676 end 0xea64)
-b158_start:
+; ---- BASIC keyword table ----
+keyword_lists:
+; Lists are in reverse letter order (Z first, A last). Each entry = keyword text WITHOUT its first
+; letter, last char has bit 7 set, followed by the token byte; a 00 byte ends each letter list.
+kw_list_Z:
+	defb "ON",0c5h,0dah		; e388  ZONE -> token &DA
+	defb 000h		; e38c  end of list
+kw_list_Y:
+	defb "PO",0d3h,048h		; e38d  YPOS -> token &48
+	defb 000h		; e391  end of list
+kw_list_X:
+	defb "PO",0d3h,047h		; e392  XPOS -> token &47
+	defb "O",0d2h,0fdh		; e396  XOR -> token &FD
+	defb 000h		; e399  end of list
+kw_list_W:
+	defb "RIT",0c5h,0d9h		; e39a  WRITE -> token &D9
+	defb "INDO",0d7h,0d8h		; e39f  WINDOW -> token &D8
+	defb "IDT",0c8h,0d7h		; e3a5  WIDTH -> token &D7
+	defb "HIL",0c5h,0d6h		; e3aa  WHILE -> token &D6
+	defb "EN",0c4h,0d5h		; e3af  WEND -> token &D5
+	defb "AI",0d4h,0d4h		; e3b3  WAIT -> token &D4
+	defb 000h		; e3b7  end of list
+kw_list_V:
+	defb "PO",0d3h,07fh		; e3b8  VPOS -> token &7F
+	defb "A",0cch,01dh		; e3bc  VAL -> token &1D
+	defb 000h		; e3bf  end of list
+kw_list_U:
+	defb "SIN",0c7h,0edh		; e3c0  USING -> token &ED
+	defb "PPER",0a4h,01ch		; e3c5  UPPER$ -> token &1C
+	defb "N",0d4h,01bh		; e3cb  UNT -> token &1B
+	defb 000h		; e3ce  end of list
+kw_list_T:
+	defb "RO",0ceh,0d3h		; e3cf  TRON -> token &D3
+	defb "ROF",0c6h,0d2h		; e3d3  TROFF -> token &D2
+	defb 0cfh,0ech		; e3d8  TO -> token &EC
+	defb "IM",0c5h,046h		; e3da  TIME -> token &46
+	defb "HE",0ceh,0ebh		; e3de  THEN -> token &EB
+	defb "EST",0d2h,07dh		; e3e2  TESTR -> token &7D
+	defb "ES",0d4h,07ch		; e3e7  TEST -> token &7C
+	defb "A",0ceh,01ah		; e3eb  TAN -> token &1A
+	defb "AGOF",0c6h,0d1h		; e3ee  TAGOFF -> token &D1
+	defb "A",0c7h,0d0h		; e3f4  TAG -> token &D0
+	defb "A",0c2h,0eah		; e3f7  TAB -> token &EA
+	defb 000h		; e3fa  end of list
+kw_list_S:
+	defb "YMBO",0cch,0cfh		; e3fb  SYMBOL -> token &CF
+	defb "WA",0d0h,0e7h		; e401  SWAP -> token &E7
+	defb "TRING",0a4h,07bh		; e405  STRING$ -> token &7B
+	defb "TR",0a4h,019h		; e40c  STR$ -> token &19
+	defb "TO",0d0h,0ceh		; e410  STOP -> token &CE
+	defb "TE",0d0h,0e6h		; e414  STEP -> token &E6
+	defb "Q",0d2h,018h		; e418  SQR -> token &18
+	defb 0d1h,017h		; e41b  SQ -> token &17
+	defb "PEE",0c4h,0cdh		; e41d  SPEED -> token &CD
+	defb "P",0c3h,0e5h		; e422  SPC -> token &E5
+	defb "PACE",0a4h,016h		; e425  SPACE$ -> token &16
+	defb "OUN",0c4h,0cch		; e42b  SOUND -> token &CC
+	defb "I",0ceh,015h		; e430  SIN -> token &15
+	defb "G",0ceh,014h		; e433  SGN -> token &14
+	defb "AV",0c5h,0cbh		; e436  SAVE -> token &CB
+	defb 000h		; e43a  end of list
+kw_list_R:
+	defb "U",0ceh,0cah		; e43b  RUN -> token &CA
+	defb "OUN",0c4h,07ah		; e43e  ROUND -> token &7A
+	defb "N",0c4h,045h		; e443  RND -> token &45
+	defb "IGHT",0a4h,079h		; e446  RIGHT$ -> token &79
+	defb "ETUR",0ceh,0c9h		; e44c  RETURN -> token &C9
+	defb "ESUM",0c5h,0c8h		; e452  RESUME -> token &C8
+	defb "ESTOR",0c5h,0c7h		; e458  RESTORE -> token &C7
+	defb "ENU",0cdh,0c6h		; e45f  RENUM -> token &C6
+	defb "EMAI",0ceh,013h		; e464  REMAIN -> token &13
+	defb "E",0cdh,0c5h		; e46a  REM -> token &C5
+	defb "ELEAS",0c5h,0c4h		; e46d  RELEASE -> token &C4
+	defb "EA",0c4h,0c3h		; e474  READ -> token &C3
+	defb "ANDOMIZ",0c5h,0c2h		; e478  RANDOMIZE -> token &C2
+	defb "A",0c4h,0c1h		; e481  RAD -> token &C1
+	defb 000h		; e484  end of list
+kw_list_Q:
+	defb 000h		; e485  end of list
+kw_list_P:
+	defb "RIN",0d4h,0bfh		; e486  PRINT -> token &BF
+	defb "O",0d3h,078h		; e48b  POS -> token &78
+	defb "OK",0c5h,0beh		; e48e  POKE -> token &BE
+	defb "LOT",0d2h,0bdh		; e492  PLOTR -> token &BD
+	defb "LO",0d4h,0bch		; e497  PLOT -> token &BC
+	defb 0c9h,044h		; e49b  PI -> token &44
+	defb "E",0ceh,0bbh		; e49d  PEN -> token &BB
+	defb "EE",0cbh,012h		; e4a0  PEEK -> token &12
+	defb "APE",0d2h,0bah		; e4a4  PAPER -> token &BA
+	defb 000h		; e4a9  end of list
+kw_list_O:
+	defb "U",0d4h,0b9h		; e4aa  OUT -> token &B9
+	defb "RIGI",0ceh,0b8h		; e4ad  ORIGIN -> token &B8
+	defb 0d2h,0fch		; e4b3  OR -> token &FC
+	defb "PENOU",0d4h,0b7h		; e4b5  OPENOUT -> token &B7
+	defb "PENI",0ceh,0b6h		; e4bc  OPENIN -> token &B6
+	defb "N S",0d1h,0b5h		; e4c2  ON SQ -> token &B5
+	defb 04eh,020h,045h,052h,052h,04fh,052h,020h,047h,04fh,009h,054h,04fh,020h,0b0h,0b4h		; e4c7  ON ERROR GO TO 0 -> token &B4
+	defb "N BREA",0cbh,0b3h		; e4d7  ON BREAK -> token &B3
+	defb 0ceh,0b2h		; e4df  ON -> token &B2
+	defb 000h		; e4e1  end of list
+kw_list_N:
+	defb "O",0d4h,0feh		; e4e2  NOT -> token &FE
+	defb "E",0d7h,0b1h		; e4e5  NEW -> token &B1
+	defb "EX",0d4h,0b0h		; e4e8  NEXT -> token &B0
+	defb 000h		; e4ec  end of list
+kw_list_M:
+	defb "OVE",0d2h,0afh		; e4ed  MOVER -> token &AF
+	defb "OV",0c5h,0aeh		; e4f2  MOVE -> token &AE
+	defb "OD",0c5h,0adh		; e4f6  MODE -> token &AD
+	defb "O",0c4h,0fbh		; e4fa  MOD -> token &FB
+	defb "I",0ceh,077h		; e4fd  MIN -> token &77
+	defb "ID",0a4h,0ach		; e500  MID$ -> token &AC
+	defb "ERG",0c5h,0abh		; e504  MERGE -> token &AB
+	defb "EMOR",0d9h,0aah		; e509  MEMORY -> token &AA
+	defb "A",0d8h,076h		; e50f  MAX -> token &76
+	defb 000h		; e512  end of list
+kw_list_L:
+	defb "OWER",0a4h,011h		; e513  LOWER$ -> token &11
+	defb "OG1",0b0h,010h		; e519  LOG10 -> token &10
+	defb "O",0c7h,00fh		; e51e  LOG -> token &0F
+	defb "OCAT",0c5h,0a9h		; e521  LOCATE -> token &A9
+	defb "OA",0c4h,0a8h		; e527  LOAD -> token &A8
+	defb "IS",0d4h,0a7h		; e52b  LIST -> token &A7
+	defb "IN",0c5h,0a6h		; e52f  LINE -> token &A6
+	defb "E",0d4h,0a5h		; e533  LET -> token &A5
+	defb "E",0ceh,00eh		; e536  LEN -> token &0E
+	defb "EFT",0a4h,075h		; e539  LEFT$ -> token &75
+	defb 000h		; e53e  end of list
+kw_list_K:
+	defb "E",0d9h,0a4h		; e53f  KEY -> token &A4
+	defb 000h		; e542  end of list
+kw_list_J:
+	defb "O",0d9h,00dh		; e543  JOY -> token &0D
+	defb 000h		; e546  end of list
+kw_list_I:
+	defb "N",0d4h,00ch		; e547  INT -> token &0C
+	defb "NST",0d2h,074h		; e54a  INSTR -> token &74
+	defb "NPU",0d4h,0a3h		; e54f  INPUT -> token &A3
+	defb "N",0d0h,00bh		; e554  INP -> token &0B
+	defb "NKEY",0a4h,043h		; e557  INKEY$ -> token &43
+	defb "NKE",0d9h,00ah		; e55d  INKEY -> token &0A
+	defb "N",0cbh,0a2h		; e562  INK -> token &A2
+	defb 0c6h,0a1h		; e565  IF -> token &A1
+	defb 000h		; e567  end of list
+kw_list_H:
+	defb "IME",0cdh,042h		; e568  HIMEM -> token &42
+	defb "EX",0a4h,073h		; e56d  HEX$ -> token &73
+	defb 000h		; e571  end of list
+kw_list_G:
+	defb 04fh,009h,054h,0cfh,0a0h		; e572  GO TO -> token &A0
+	defb 04fh,009h,053h,055h,0c2h,09fh		; e577  GO SUB -> token &9F
+	defb 000h		; e57d  end of list
+kw_list_F:
+	defb "R",0c5h,009h		; e57e  FRE -> token &09
+	defb "O",0d2h,09eh		; e581  FOR -> token &9E
+	defb 0ceh,0e4h		; e584  FN -> token &E4
+	defb "I",0d8h,008h		; e586  FIX -> token &08
+	defb 000h		; e589  end of list
+kw_list_E:
+	defb "X",0d0h,007h		; e58a  EXP -> token &07
+	defb "VER",0d9h,09dh		; e58d  EVERY -> token &9D
+	defb "RRO",0d2h,09ch		; e592  ERROR -> token &9C
+	defb "R",0d2h,041h		; e597  ERR -> token &41
+	defb "R",0cch,0e3h		; e59a  ERL -> token &E3
+	defb "RAS",0c5h,09bh		; e59d  ERASE -> token &9B
+	defb "O",0c6h,040h		; e5a2  EOF -> token &40
+	defb "N",0d6h,09ah		; e5a5  ENV -> token &9A
+	defb "N",0d4h,099h		; e5a8  ENT -> token &99
+	defb "N",0c4h,098h		; e5ab  END -> token &98
+	defb "LS",0c5h,097h		; e5ae  ELSE -> token &97
+	defb 0c9h,0dch		; e5b2  EI -> token &DC
+	defb "DI",0d4h,096h		; e5b4  EDIT -> token &96
+	defb 000h		; e5b8  end of list
+kw_list_D:
+	defb "RAW",0d2h,095h		; e5b9  DRAWR -> token &95
+	defb "RA",0d7h,094h		; e5be  DRAW -> token &94
+	defb "I",0cdh,093h		; e5c2  DIM -> token &93
+	defb 0c9h,0dbh		; e5c5  DI -> token &DB
+	defb "ELET",0c5h,092h		; e5c7  DELETE -> token &92
+	defb "E",0c7h,091h		; e5cd  DEG -> token &91
+	defb "EFST",0d2h,090h		; e5d0  DEFSTR -> token &90
+	defb "EFREA",0cch,08fh		; e5d6  DEFREAL -> token &8F
+	defb "EFIN",0d4h,08eh		; e5dd  DEFINT -> token &8E
+	defb "E",0c6h,08dh		; e5e3  DEF -> token &8D
+	defb "EC",0a4h,072h		; e5e6  DEC$ -> token &72
+	defb "AT",0c1h,08ch		; e5ea  DATA -> token &8C
+	defb 000h		; e5ee  end of list
+kw_list_C:
+	defb "REA",0cch,006h		; e5ef  CREAL -> token &06
+	defb "O",0d3h,005h		; e5f4  COS -> token &05
+	defb "ON",0d4h,08bh		; e5f7  CONT -> token &8B
+	defb "L",0d3h,08ah		; e5fb  CLS -> token &8A
+	defb "LOSEOU",0d4h,089h		; e5fe  CLOSEOUT -> token &89
+	defb "LOSEI",0ceh,088h		; e606  CLOSEIN -> token &88
+	defb "L",0c7h,087h		; e60d  CLG -> token &87
+	defb "LEA",0d2h,086h		; e610  CLEAR -> token &86
+	defb "IN",0d4h,004h		; e615  CINT -> token &04
+	defb "HR",0a4h,003h		; e619  CHR$ -> token &03
+	defb "HAI",0ceh,085h		; e61d  CHAIN -> token &85
+	defb "A",0d4h,084h		; e622  CAT -> token &84
+	defb "AL",0cch,083h		; e625  CALL -> token &83
+	defb 000h		; e629  end of list
+kw_list_B:
+	defb "ORDE",0d2h,082h		; e62a  BORDER -> token &82
+	defb "IN",0a4h,071h		; e630  BIN$ -> token &71
+	defb 000h		; e634  end of list
+kw_list_A:
+	defb "UT",0cfh,081h		; e635  AUTO -> token &81
+	defb "T",0ceh,002h		; e639  ATN -> token &02
+	defb "S",0c3h,001h		; e63c  ASC -> token &01
+	defb "N",0c4h,0fah		; e63f  AND -> token &FA
+	defb "FTE",0d2h,080h		; e642  AFTER -> token &80
+	defb "B",0d3h,000h		; e647  ABS -> token &00
+	defb 000h		; e64a  end of list
+	defb 0deh,0f8h		; e64b  A^ -> token &F8
+	defb 0dch,0f9h		; e64d  A\ -> token &F9
+	defb 03eh,009h,0bdh,0f0h		; e64f  A> = -> token &F0
+	defb "= ",0beh,0f0h		; e653  A= > -> token &F0
+	defb 0beh,0eeh		; e657  A> -> token &EE
+	defb 0bdh,0efh		; e659  A= -> token &EF
+	defb 03ch,009h,0beh,0f2h		; e65b  A< > -> token &F2
+	defb 03ch,009h,0bdh,0f3h		; e65f  A< = -> token &F3
+	defb "= ",0bch,0f3h		; e663  A= < -> token &F3
+	defb 0bch,0f1h		; e667  A< -> token &F1
+	defb 0afh,0f7h		; e669  A/ -> token &F7
+	defb 0bah,001h		; e66b  A: -> token &01
+	defb 0aah,0f6h		; e66d  A* -> token &F6
+	defb 0adh,0f5h		; e66f  A- -> token &F5
+	defb 0abh,0f4h		; e671  A+ -> token &F4
+	defb 0a7h,0c0h		; e673  A' -> token &C0
+	defb 000h		; e675  end of list
+sub_e676h:
 	xor a			;e676
 	ld (0ae3ah),a		;e677
 	ld hl,(0ae81h)		;e67a
@@ -7464,7 +6045,7 @@ le6cch:
 	ret			;e6d1
 sub_e6d2h:
 	call sub_e687h		;e6d2
-	call b150_end		;e6d5
+	call sub_debbh		;e6d5
 	push hl			;e6d8
 	call sub_dd61h		;e6d9
 	or a			;e6dc
@@ -7518,6 +6099,7 @@ sub_e70bh:
 	ld hl,00000h		;e71f
 	call sub_ffdah		;e722
 	jp sub_f52ch		;e725
+le728h:
 	call sub_e737h		;e728
 	call sub_dd4ah		;e72b
 	call sub_e75ah		;e72e
@@ -7565,7 +6147,7 @@ sub_e767h:
 	jr nc,le786h		;e77b
 	pop hl			;e77d
 	push hl			;e77e
-	call sub_e8f3h		;e77f
+	call le8f3h		;e77f
 	inc hl			;e782
 	call sub_e7a7h		;e783
 le786h:
@@ -7642,6 +6224,7 @@ le7c5h:
 le7ddh:
 	pop hl			;e7dd
 	ret			;e7de
+le7dfh:
 	ld de,0000ah		;e7df
 	jr z,le7e9h		;e7e2
 	cp 02ch		;e7e4
@@ -7831,7 +6414,7 @@ le8eah:
 sub_e8efh:
 	ld b,001h		;e8ef
 	jr le8f5h		;e8f1
-sub_e8f3h:
+le8f3h:
 	ld b,000h		;e8f3
 le8f5h:
 	dec hl			;e8f5
@@ -7981,6 +6564,7 @@ le9b4h:
 	ld (hl),000h		;e9b8
 	ex de,hl			;e9ba
 	jr le996h		;e9bb
+le9bdh:
 	call sub_dd51h		;e9bd
 	ex de,hl			;e9c0
 	ld hl,(0ae81h)		;e9c1
@@ -8009,6 +6593,7 @@ le9f1h:
 	inc hl			;e9f1
 	pop af			;e9f2
 	jp ldd93h		;e9f3
+le9f6h:
 	call sub_ea0dh		;e9f6
 	jr nc,lea01h		;e9f9
 	call sub_eba8h		;e9fb
@@ -8044,6 +6629,7 @@ lea30h:
 	call c,CAS_IN_CLOSE		;ea37
 	pop hl			;ea3a
 	ret			;ea3b
+lea3ch:
 	xor 0abh		;ea3c
 	jr nz,lea44h		;ea3e
 	call sub_dd3fh		;ea40
@@ -8064,15 +6650,8 @@ lea59h:
 	ld a,000h		;ea5d
 	jr nc,lea6ah		;ea5f
 	call expect_char_inline		;ea61
-b158_end:
 
-; BLOCK 'b159' (start 0xea64 end 0xea65)
-b159_start:
-	defb 092h		;ea64
-b159_end:
-
-; BLOCK 'b160' (start 0xea65 end 0xec19)
-b160_start:
+	defb 092h		; ea64
 	call sub_e737h		;ea65
 	ld a,0ffh		;ea68
 lea6ah:
@@ -8108,6 +6687,7 @@ lea95h:
 	call sub_e79ah		;eaa1
 	dec hl			;eaa4
 	ret			;eaa5
+leaa6h:
 	call sub_eb8fh		;eaa6
 	call sub_dd4ah		;eaa9
 	call sub_c18ch		;eaac
@@ -8321,54 +6901,41 @@ lebf5h:
 	ld e,006h		;ec04
 lec06h:
 	jp raise_error		;ec06
+lec09h:
 	call sub_d2adh		;ec09
-	call sub_d256h		;ec0c
+	call ld256h		;ec0c
 	ld b,000h		;ec0f
 	call sub_dd55h		;ec11
 	jr nc,lec3fh		;ec14
 	call expect_char_inline		;ec16
-b160_end:
 
-; BLOCK 'b161' (start 0xec19 end 0xec1a)
-b161_start:
-	defb 00dh		;ec19
-b161_end:
-
-; BLOCK 'b162' (start 0xec1a end 0xec2c)
-b162_start:
+	defb 00dh		; ec19
 	inc hl			;ec1a
 	inc hl			;ec1b
 	ld a,(hl)			;ec1c
 	inc hl			;ec1d
 	and 0dfh		;ec1e
-	jp p,b163_end		;ec20
+	jp p,lec38h		;ec20
 	push hl			;ec23
-	ld hl,b162_end		;ec24
+	ld hl,key_table_ec2c		;ec24
 	call sub_ff93h		;ec27
 	ex (sp),hl			;ec2a
 	ret			;ec2b
-b162_end:
 
-; BLOCK 'b163' (start 0xec2c end 0xec38)
-b163_start:
-	defb 003h		;ec2c
-	defb 038h		;ec2d
-	defb 0ech		;ec2e
-	defb 0c1h		;ec2f
-	defb 087h		;ec30
-	defb 0ech		;ec31
-	defb 0c2h		;ec32
-	defb 05ch		;ec33
-	defb 0ech		;ec34
-	defb 0d0h		;ec35
-	defb 03dh		;ec36
-	defb 0ech		;ec37
-b163_end:
-
-; BLOCK 'b164' (start 0xec38 end 0xec61)
-b164_start:
+key_table_ec2c:
+; ---- key->handler search table (routine &FF93): count, then (addr,key) entries, then default addr ----
+	defb 003h		; ec2c  count
+	defw lec38h		; ec2d
+	defb 0c1h		; ec2f  key 
+	defw lec87h		; ec30
+	defb 0c2h		; ec32  key 
+	defw lec5ch		; ec33
+	defb 0d0h		; ec35  key 
+	defw lec3dh		; ec36  default
+lec38h:
 	ld e,002h		;ec38
 	jp raise_error		;ec3a
+lec3dh:
 	ld b,001h		;ec3d
 lec3fh:
 	call sub_dd4ah		;ec3f
@@ -8385,29 +6952,16 @@ lec3fh:
 	pop af			;ec56
 	ld bc,00000h		;ec57
 	jr lec7fh		;ec5a
+lec5ch:
 	ld b,002h		;ec5c
 	call expect_char_inline		;ec5e
-b164_end:
 
-; BLOCK 'b165' (start 0xec61 end 0xec62)
-b165_start:
-	defb 02ch		;ec61
-b165_end:
-
-; BLOCK 'b166' (start 0xec62 end 0xec69)
-b166_start:
+	defb 02ch		; ec61  ; inline char ','
 	call lce91h		;ec62
 	push de			;ec65
 	call expect_char_inline		;ec66
-b166_end:
 
-; BLOCK 'b167' (start 0xec69 end 0xec6a)
-b167_start:
-	defb 02ch		;ec69
-b167_end:
-
-; BLOCK 'b168' (start 0xec6a end 0xf166)
-b168_start:
+	defb 02ch		; ec69  ; inline char ','
 	call lce91h		;ec6a
 	push de			;ec6d
 	call sub_dd55h		;ec6e
@@ -8423,13 +6977,14 @@ lec7fh:
 	call CAS_OUT_DIRECT		;ec7f
 	jp nc,lcb6bh		;ec82
 	jr lec9eh		;ec85
+lec87h:
 	call sub_dd4ah		;ec87
 	push hl			;ec8a
 	ld a,009h		;ec8b
 	call lc1a2h		;ec8d
 	push af			;ec90
 	ld bc,00001h		;ec91
-	ld de,lffffh		;ec94
+	ld de,0ffffh		;ec94
 	call sub_e10dh		;ec97
 	pop af			;ec9a
 	call lc1a2h		;ec9b
@@ -9337,48 +7892,39 @@ lf153h:
 	jr nz,lf12eh		;f154
 	pop hl			;f156
 	ret			;f157
+lf158h:
 	call sub_fec2h		;f158
 	rst 20h			;f15b
 	jp sub_ff0ah		;f15c
+lf15fh:
 	call lce91h		;f15f
 	push de			;f162
 	call expect_char_inline		;f163
-b168_end:
 
-; BLOCK 'b169' (start 0xf166 end 0xf167)
-b169_start:
-	defb 02ch		;f166
-b169_end:
-
-; BLOCK 'b170' (start 0xf167 end 0xf188)
-b170_start:
-	call b76_end		;f167
+	defb 02ch		; f166  ; inline char ','
+	call sub_ce67h		;f167
 	pop de			;f16a
 	ld (de),a			;f16b
 	ret			;f16c
+lf16dh:
 	call sub_fe8dh		;f16d
 	ld b,h			;f170
 	ld c,l			;f171
 	in a,(c)		;f172
 	jp sub_ff0ah		;f174
+lf177h:
 	call sub_f194h		;f177
 	out (c),a		;f17a
 	ret			;f17c
+lf17dh:
 	call sub_f194h		;f17d
 	ld d,a			;f180
 	ld e,000h		;f181
 	jr z,lf18dh		;f183
 	call expect_char_inline		;f185
-b170_end:
 
-; BLOCK 'b171' (start 0xf188 end 0xf189)
-b171_start:
-	defb 02ch		;f188
-b171_end:
-
-; BLOCK 'b172' (start 0xf189 end 0xf19c)
-b172_start:
-	call b76_end		;f189
+	defb 02ch		; f188  ; inline char ','
+	call sub_ce67h		;f189
 	ld e,a			;f18c
 lf18dh:
 	in a,(c)		;f18d
@@ -9391,16 +7937,9 @@ sub_f194h:
 	ld b,d			;f197
 	ld c,e			;f198
 	call expect_char_inline		;f199
-b172_end:
 
-; BLOCK 'b173' (start 0xf19c end 0xf19d)
-b173_start:
-	defb 02ch		;f19c
-b173_end:
-
-; BLOCK 'b174' (start 0xf19d end 0xf1e8)
-b174_start:
-	jp b76_end		;f19d
+	defb 02ch		; f19c  ; inline char ','
+	jp sub_ce67h		;f19d
 lf1a0h:
 	inc hl			;f1a0
 	ld a,(hl)			;f1a1
@@ -9421,6 +7960,7 @@ lf1aeh:
 lf1b5h:
 	ld e,01ch		;f1b5
 	jp raise_error		;f1b7
+lf1bah:
 	call lce91h		;f1ba
 	ld c,0ffh		;f1bd
 lf1bfh:
@@ -9443,25 +7983,20 @@ lf1d8h:
 	ld ix,00000h		;f1e1
 	add ix,sp		;f1e5
 	rst 18h			;f1e7
-b174_end:
 
-; BLOCK 'b175' (start 0xf1e8 end 0xf1ea)
-b175_start:
-	defw 0ae72h		;f1e8
-b175_end:
-
-; BLOCK 'b176' (start 0xf1ea end 0xf224)
-b176_start:
+	defw 0ae72h		; f1e8  inline address operand
 	ld sp,(0ae77h)		;f1ea
 	ld hl,(0ae75h)		;f1ee
 	ret			;f1f1
 sub_f1f2h:
 	ld a,00dh		;f1f2
 	jr lf1f9h		;f1f4
+lf1f6h:
 	call sub_ce6dh		;f1f6
 lf1f9h:
 	ld (0ae79h),a		;f1f9
 	ret			;f1fc
+lf1fdh:
 	call sub_c1c6h		;f1fd
 	push af			;f200
 	call sub_f208h		;f201
@@ -9474,36 +8009,27 @@ lf20eh:
 	cp 0edh		;f20e
 	jp z,lf2c4h		;f210
 	ex de,hl			;f213
-	ld hl,b176_end		;f214
+	ld hl,key_table_f224		;f214
 	call sub_ff93h		;f217
 	ex de,hl			;f21a
 	call sub_fffbh		;f21b
 	call sub_dd51h		;f21e
 	jr nc,lf20eh		;f221
 	ret			;f223
-b176_end:
 
-; BLOCK 'b177' (start 0xf224 end 0xf233)
-b177_start:
-	defb 005h		;f224
-	defb 033h		;f225
-	defb 0f2h		;f226
-	defb 02ch		;f227
-	defb 05ch		;f228
-	defb 0f2h		;f229
-	defb 0e5h		;f22a
-	defb 077h		;f22b
-	defb 0f2h		;f22c
-	defb 0eah		;f22d
-	defb 080h		;f22e
-	defb 0f2h		;f22f
-	defb 03bh		;f230
-	defb 03fh		;f231
-	defb 0ddh		;f232
-b177_end:
-
-; BLOCK 'b178' (start 0xf233 end 0xf2a6)
-b178_start:
+key_table_f224:
+; ---- key->handler search table (routine &FF93): count, then (addr,key) entries, then default addr ----
+	defb 005h		; f224  count
+	defw lf233h		; f225
+	defb 02ch		; f227  key ','
+	defw lf25ch		; f228
+	defb 0e5h		; f22a  key 
+	defw lf277h		; f22b
+	defb 0eah		; f22d  key 
+	defw lf280h		; f22e
+	defb 03bh		; f230  key ';'
+	defw sub_dd3fh		; f231  default
+lf233h:
 	call sub_cefbh		;f233
 	push af			;f236
 	push hl			;f237
@@ -9524,6 +8050,7 @@ lf249h:
 	pop af			;f257
 	call z,sub_c34eh		;f258
 	ret			;f25b
+lf25ch:
 	call sub_dd3fh		;f25c
 	ld a,(0ae79h)		;f25f
 	ld c,a			;f262
@@ -9540,10 +8067,12 @@ lf267h:
 	jp nc,sub_c34eh		;f271
 	ld a,b			;f274
 	jr lf295h		;f275
+lf277h:
 	call sub_f2a0h		;f277
 	call sub_f2afh		;f27a
 	ld a,e			;f27d
 	jr lf295h		;f27e
+lf280h:
 	call sub_f2a0h		;f280
 	dec de			;f283
 	call sub_f2afh		;f284
@@ -9568,26 +8097,12 @@ lf297h:
 sub_f2a0h:
 	call sub_dd3fh		;f2a0
 	call expect_char_inline		;f2a3
-b178_end:
 
-; BLOCK 'b179' (start 0xf2a6 end 0xf2a7)
-b179_start:
-	defb 028h		;f2a6
-b179_end:
-
-; BLOCK 'b180' (start 0xf2a7 end 0xf2ad)
-b180_start:
+	defb 028h		; f2a6  ; inline char '('
 	call sub_ce86h		;f2a7
 	call expect_char_inline		;f2aa
-b180_end:
 
-; BLOCK 'b181' (start 0xf2ad end 0xf2ae)
-b181_start:
-	defb 029h		;f2ad
-b181_end:
-
-; BLOCK 'b182' (start 0xf2ae end 0xf2cd)
-b182_start:
+	defb 029h		; f2ad  ; inline char ')'
 	ret			;f2ae
 sub_f2afh:
 	ld a,d			;f2af
@@ -9608,15 +8123,8 @@ lf2c4h:
 	call sub_dd3fh		;f2c4
 	call sub_cea5h		;f2c7
 	call expect_char_inline		;f2ca
-b182_end:
 
-; BLOCK 'b183' (start 0xf2cd end 0xf2ce)
-b183_start:
-	defb 03bh		;f2cd
-b183_end:
-
-; BLOCK 'b184' (start 0xf2ce end 0xf6a8)
-b184_start:
+	defb 03bh		; f2cd  ; inline char ';'
 	push hl			;f2ce
 	ld hl,(0b0c2h)		;f2cf
 	ld a,(hl)			;f2d2
@@ -9750,7 +8258,7 @@ lf378h:
 	ld c,000h		;f389
 	ld hl,(0b0c2h)		;f38b
 	ex de,hl			;f38e
-	call nz,b197_end		;f38f
+	call nz,sub_f971h		;f38f
 	call sub_f828h		;f392
 	pop af			;f395
 	jr z,lf39fh		;f396
@@ -9930,6 +8438,7 @@ lf476h:
 	inc de			;f478
 	dec b			;f479
 	ret			;f47a
+lf47bh:
 	call sub_c1c6h		;f47b
 	push af			;f47e
 	call sub_dd51h		;f47f
@@ -9991,6 +8500,7 @@ sub_f4c4h:
 	xor a			;f4ea
 	ld (0b091h),a		;f4eb
 	ret			;f4ee
+lf4efh:
 	call sub_fc3eh		;f4ef
 	call lce91h		;f4f2
 	push hl			;f4f5
@@ -10255,23 +8765,17 @@ lf699h:
 	pop de			;f69a
 	pop bc			;f69b
 	ret			;f69c
+lf69dh:
 	cp 080h		;f69d
 	jr z,lf6cdh		;f69f
-	call b76_end		;f6a1
+	call sub_ce67h		;f6a1
 	ld c,a			;f6a4
 	call expect_char_inline		;f6a5
-b184_end:
 
-; BLOCK 'b185' (start 0xf6a8 end 0xf6a9)
-b185_start:
-	defb 02ch		;f6a8
-b185_end:
-
-; BLOCK 'b186' (start 0xf6a9 end 0xf8e4)
-b186_start:
+	defb 02ch		; f6a8  ; inline char ','
 	ld b,008h		;f6a9
 lf6abh:
-	call b76_end		;f6ab
+	call sub_ce67h		;f6ab
 lf6aeh:
 	push af			;f6ae
 	dec b			;f6af
@@ -10524,6 +9028,7 @@ lf82ch:
 	call lc36eh		;f82e
 	djnz lf82ch		;f831
 	ret			;f833
+lf834h:
 	ld bc,lf839h		;f834
 	jr lf845h		;f837
 lf839h:
@@ -10533,6 +9038,7 @@ lf839h:
 	ret nc			;f83e
 	add a,020h		;f83f
 	ret			;f841
+lf842h:
 	ld bc,sub_ff8ah		;f842
 lf845h:
 	push bc			;f845
@@ -10621,11 +9127,13 @@ lf8b6h:
 	ret nz			;f8b7
 	inc a			;f8b8
 	ret			;f8b9
+lf8bah:
 	call sub_f8ceh		;f8ba
 	push de			;f8bd
 	call sub_f114h		;f8be
 	ex de,hl			;f8c1
 	jr lf922h		;f8c2
+lf8c4h:
 	call sub_f8ceh		;f8c4
 	push de			;f8c7
 	call sub_f119h		;f8c8
@@ -10636,56 +9144,29 @@ sub_f8ceh:
 	call sub_ff53h		;f8d1
 	call sub_dd55h		;f8d4
 	sbc a,a			;f8d7
-	call c,b76_end		;f8d8
+	call c,sub_ce67h		;f8d8
 	cp 011h		;f8db
 	jp nc,lfa9ch		;f8dd
 	ld b,a			;f8e0
 	call expect_char_inline		;f8e1
-b186_end:
 
-; BLOCK 'b187' (start 0xf8e4 end 0xf8e5)
-b187_start:
-	defb 029h		;f8e4
-b187_end:
-
-; BLOCK 'b188' (start 0xf8e5 end 0xf8ed)
-b188_start:
+	defb 029h		; f8e4  ; inline char ')'
 	ex de,hl			;f8e5
 	ld a,c			;f8e6
 	jp sub_f5a0h		;f8e7
+lf8eah:
 	call expect_char_inline		;f8ea
-b188_end:
 
-; BLOCK 'b189' (start 0xf8ed end 0xf8ee)
-b189_start:
-	defb 028h		;f8ed
-b189_end:
-
-; BLOCK 'b190' (start 0xf8ee end 0xf8f4)
-b190_start:
+	defb 028h		; f8ed  ; inline char '('
 	call sub_cefbh		;f8ee
 	call expect_char_inline		;f8f1
-b190_end:
 
-; BLOCK 'b191' (start 0xf8f4 end 0xf8f5)
-b191_start:
-	defb 02ch		;f8f4
-b191_end:
-
-; BLOCK 'b192' (start 0xf8f5 end 0xf8fe)
-b192_start:
+	defb 02ch		; f8f4  ; inline char ','
 	call sub_ff53h		;f8f5
 	call sub_ce9fh		;f8f8
 	call expect_char_inline		;f8fb
-b192_end:
 
-; BLOCK 'b193' (start 0xf8fe end 0xf8ff)
-b193_start:
-	defb 029h		;f8fe
-b193_end:
-
-; BLOCK 'b194' (start 0xf8ff end 0xf94e)
-b194_start:
+	defb 029h		; f8fe  ; inline char ')'
 	push hl			;f8ff
 	ld a,c			;f900
 	call sub_f5a0h		;f901
@@ -10705,11 +9186,12 @@ b194_start:
 	jr lf922h		;f919
 lf91bh:
 	jp lfa9ch		;f91b
+lf91eh:
 	push hl			;f91e
 	call sub_ee9dh		;f91f
 lf922h:
 	push hl			;f922
-	ld bc,lffffh		;f923
+	ld bc,0ffffh		;f923
 lf926h:
 	inc bc			;f926
 	ld a,(hl)			;f927
@@ -10726,24 +9208,20 @@ lf926h:
 	call sub_fbbah		;f937
 	pop hl			;f93a
 	ret			;f93b
+lf93ch:
 	call sub_f9e9h		;f93c
 	ld c,000h		;f93f
 	jr lf96dh		;f941
+lf943h:
 	call sub_f9e9h		;f943
 	ld a,(de)			;f946
 	sub b			;f947
 	ld c,a			;f948
 	jr lf96dh		;f949
+lf94bh:
 	call expect_char_inline		;f94b
-b194_end:
 
-; BLOCK 'b195' (start 0xf94e end 0xf94f)
-b195_start:
-	defb 028h		;f94e
-b195_end:
-
-; BLOCK 'b196' (start 0xf94f end 0xf970)
-b196_start:
+	defb 028h		; f94e  ; inline char '('
 	call sub_f9e9h		;f94f
 	ld a,b			;f952
 	or a			;f953
@@ -10768,15 +9246,9 @@ lf96bh:
 	pop hl			;f96c
 lf96dh:
 	call expect_char_inline		;f96d
-b196_end:
 
-; BLOCK 'b197' (start 0xf970 end 0xf971)
-b197_start:
-	defb 029h		;f970
-b197_end:
-
-; BLOCK 'b198' (start 0xf971 end 0xf996)
-b198_start:
+	defb 029h		; f970  ; inline char ')'
+sub_f971h:
 	push hl			;f971
 	ex de,hl			;f972
 	ld a,(hl)			;f973
@@ -10801,16 +9273,10 @@ lf97bh:
 	call sub_fbbah		;f98e
 	pop hl			;f991
 	ret			;f992
+lf993h:
 	call expect_char_inline		;f993
-b198_end:
 
-; BLOCK 'b199' (start 0xf996 end 0xf997)
-b199_start:
-	defb 028h		;f996
-b199_end:
-
-; BLOCK 'b200' (start 0xf997 end 0xf9a6)
-b200_start:
+	defb 028h		; f996  ; inline char '('
 	call sub_d686h		;f997
 	call lff3ch		;f99a
 	push hl			;f99d
@@ -10818,39 +9284,18 @@ b200_start:
 	call sub_fb21h		;f99f
 	ex (sp),hl			;f9a2
 	call expect_char_inline		;f9a3
-b200_end:
 
-; BLOCK 'b201' (start 0xf9a6 end 0xf9a7)
-b201_start:
-	defb 02ch		;f9a6
-b201_end:
-
-; BLOCK 'b202' (start 0xf9a7 end 0xf9b2)
-b202_start:
+	defb 02ch		; f9a6  ; inline char ','
 	call sub_ce6dh		;f9a7
 	ld b,a			;f9aa
 	call sub_f9fbh		;f9ab
 	ld c,e			;f9ae
 	call expect_char_inline		;f9af
-b202_end:
 
-; BLOCK 'b203' (start 0xf9b2 end 0xf9b3)
-b203_start:
-	defb 029h		;f9b2
-b203_end:
-
-; BLOCK 'b204' (start 0xf9b3 end 0xf9b6)
-b204_start:
+	defb 029h		; f9b2  ; inline char ')'
 	call expect_char_inline		;f9b3
-b204_end:
 
-; BLOCK 'b205' (start 0xf9b6 end 0xf9b7)
-b205_start:
-	defb 0efh		;f9b6
-b205_end:
-
-; BLOCK 'b206' (start 0xf9b7 end 0xf9ef)
-b206_start:
+	defb 0efh		; f9b6
 	push bc			;f9b7
 	call sub_ce9fh		;f9b8
 	ld a,b			;f9bb
@@ -10897,19 +9342,12 @@ lf9e7h:
 sub_f9e9h:
 	call sub_cea5h		;f9e9
 	call expect_char_inline		;f9ec
-b206_end:
 
-; BLOCK 'b207' (start 0xf9ef end 0xf9f0)
-b207_start:
-	defb 02ch		;f9ef
-b207_end:
-
-; BLOCK 'b208' (start 0xf9f0 end 0xfa04)
-b208_start:
+	defb 02ch		; f9ef  ; inline char ','
 	push hl			;f9f0
 	ld hl,(0b0c2h)		;f9f1
 	ex (sp),hl			;f9f4
-	call b76_end		;f9f5
+	call sub_ce67h		;f9f5
 	ld b,a			;f9f8
 	pop de			;f9f9
 	ret			;f9fa
@@ -10919,22 +9357,18 @@ sub_f9fbh:
 	cp 029h		;f9fe
 	ret z			;fa00
 	call expect_char_inline		;fa01
-b208_end:
 
-; BLOCK 'b209' (start 0xfa04 end 0xfa05)
-b209_start:
-	defb 02ch		;fa04
-b209_end:
-
-; BLOCK 'b210' (start 0xfa05 end 0xfa3d)
-b210_start:
-	call b76_end		;fa05
+	defb 02ch		; fa04  ; inline char ','
+	call sub_ce67h		;fa05
 	ld e,a			;fa08
 	ret			;fa09
+lfa0ah:
 	call lfbdah		;fa0a
 	jp sub_ff0ah		;fa0d
+lfa10h:
 	call sub_fa70h		;fa10
 	jp sub_ff0ah		;fa13
+lfa16h:
 	call sub_fa92h		;fa16
 lfa19h:
 	push af			;fa19
@@ -10953,29 +9387,16 @@ sub_fa2ah:
 	xor a			;fa2f
 	ld (0b0bah),a		;fa30
 	jp sub_fbbah		;fa33
-	call b76_end		;fa36
+lfa36h:
+	call sub_ce67h		;fa36
 	ld c,a			;fa39
 	call expect_char_inline		;fa3a
-b210_end:
 
-; BLOCK 'b211' (start 0xfa3d end 0xfa3e)
-b211_start:
-	defb 02ch		;fa3d
-b211_end:
-
-; BLOCK 'b212' (start 0xfa3e end 0xfa44)
-b212_start:
+	defb 02ch		; fa3d  ; inline char ','
 	call sub_cefbh		;fa3e
 	call expect_char_inline		;fa41
-b212_end:
 
-; BLOCK 'b213' (start 0xfa44 end 0xfa45)
-b213_start:
-	defb 029h		;fa44
-b213_end:
-
-; BLOCK 'b214' (start 0xfa45 end 0xfab6)
-b214_start:
+	defb 029h		; fa44  ; inline char ')'
 	push hl			;fa45
 	call sub_ff45h		;fa46
 	jr z,lfa50h		;fa49
@@ -10987,6 +9408,7 @@ lfa53h:
 	ld b,c			;fa53
 	ld c,a			;fa54
 	jr lfa5eh		;fa55
+lfa57h:
 	call sub_fa92h		;fa57
 	ld b,a			;fa5a
 	ld c,020h		;fa5b
@@ -11011,6 +9433,7 @@ sub_fa70h:
 	jr z,lfa9ch		;fa73
 	ld a,(de)			;fa75
 	ret			;fa76
+lfa77h:
 	call lfbdah		;fa77
 	jp z,sub_ff0ah		;fa7a
 	ex de,hl			;fa7d
@@ -11042,6 +9465,7 @@ lfa9ch:
 	ld e,005h		;fa9c
 lfa9eh:
 	jp raise_error		;fa9e
+lfaa1h:
 	call sub_cefbh		;faa1
 	call sub_ff45h		;faa4
 	ld c,001h		;faa7
@@ -11051,41 +9475,20 @@ lfa9eh:
 	jp z,lfa9ch		;faaf
 	ld c,a			;fab2
 	call expect_char_inline		;fab3
-b214_end:
 
-; BLOCK 'b215' (start 0xfab6 end 0xfab7)
-b215_start:
-	defb 02ch		;fab6
-b215_end:
-
-; BLOCK 'b216' (start 0xfab7 end 0xfabd)
-b216_start:
+	defb 02ch		; fab6  ; inline char ','
 	call sub_cea5h		;fab7
 lfabah:
 	call expect_char_inline		;faba
-b216_end:
 
-; BLOCK 'b217' (start 0xfabd end 0xfabe)
-b217_start:
-	defb 02ch		;fabd
-b217_end:
-
-; BLOCK 'b218' (start 0xfabe end 0xfac9)
-b218_start:
+	defb 02ch		; fabd  ; inline char ','
 	push hl			;fabe
 	ld hl,(0b0c2h)		;fabf
 	ex (sp),hl			;fac2
 	call sub_ce9fh		;fac3
 	call expect_char_inline		;fac6
-b218_end:
 
-; BLOCK 'b219' (start 0xfac9 end 0xfaca)
-b219_start:
-	defb 029h		;fac9
-b219_end:
-
-; BLOCK 'b220' (start 0xfaca end 0xfffd)
-b220_start:
+	defb 029h		; fac9  ; inline char ')'
 	ex (sp),hl			;faca
 	ld a,c			;facb
 	call sub_fad4h		;facc
@@ -11338,6 +9741,7 @@ sub_fc19h:
 	pop bc			;fc2a
 	pop af			;fc2b
 	ret			;fc2c
+lfc2dh:
 	call sub_ff45h		;fc2d
 	jr nz,lfc38h		;fc30
 	call lfbdah		;fc32
@@ -11537,6 +9941,7 @@ lfd77h:
 	call lff0ch		;fd80
 	pop hl			;fd83
 	ret			;fd84
+lfd85h:
 	call sub_fda3h		;fd85
 	ret p			;fd88
 lfd89h:
@@ -11598,8 +10003,10 @@ sub_fdceh:
 lfde4h:
 	ex de,hl			;fde4
 	jp sub_ff4eh		;fde5
+lfde8h:
 	ld de,GRA_SET_LINE_MASK		;fde8
 	jr lfdf0h		;fdeb
+lfdedh:
 	ld de,GRA_FROM_USER		;fded
 lfdf0h:
 	call sub_ff2dh		;fdf0
@@ -11766,7 +10173,7 @@ sub_fee5h:
 	sub 003h		;fee5
 	jr c,sub_fe8dh		;fee7
 	jp z,lff3ch		;fee9
-sub_feech:
+lfeech:
 	call sub_ff2dh		;feec
 	jp c,sub_fe6ah		;feef
 	ret			;fef2
@@ -11778,6 +10185,7 @@ lfef3h:
 	ld (0b0c5h),hl		;fefd
 	pop hl			;ff00
 	ret			;ff01
+lff02h:
 	call sub_fda3h		;ff02
 sub_ff05h:
 	ld l,a			;ff05
@@ -12001,12 +10409,6 @@ sub_fffbh:
 	push de			;fffb
 lfffch:
 	ret			;fffc
-b220_end:
 
-; BLOCK 'b221' (start 0xfffd end 0x10000)
-b221_start:
-	defb 0c7h		;fffd
-	defb 0c7h		;fffe
-lffffh:
-	defb 054h		;ffff
-b221_end:
+rom_tail:
+	defb 0c7h,0c7h,054h		; fffd  trailing bytes
